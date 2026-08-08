@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Self-hosted DMARC aggregate report analyzer (PHP 8.3, strict types; MariaDB 10.11+; Apache; PDO/prepared statements; no framework). Full requirements live in `docs/dmarc-report-analyzer-spec.md` — read it before implementing anything beyond ingestion, since most of the app is still unbuilt against that spec.
 
-**Status: scaffold, not a finished application.** The ingestion path (decompress → parse → store) is complete and unit-tested. `bin/enrich.php`, `bin/healthcheck.php`, `bin/analyze.php`, `bin/alert.php` are stubs. The dashboard is a bare domain list. Auth/RBAC (`src/Http`, users/sessions tables) has a DB schema but no code. Treat this split as current fact, not aspiration — verify against the file before assuming something is implemented.
+**Status: scaffold, not a finished application.** Ingestion (decompress → parse → store), enrichment (`bin/enrich.php`), the domain health check (`bin/healthcheck.php`), and auth/RBAC (invitations, passkeys, TOTP, sessions, admin user management) are built and unit-tested. `bin/analyze.php` (the §10 recommendation engine) and `bin/alert.php` (§8 alerting) are still stubs. The dashboard covers the domain list only — no per-domain drill-down, no recommendations/health-check UI yet. Treat this split as current fact, not aspiration — verify against the file before assuming something is implemented.
 
 ## Commands
 
@@ -22,8 +22,12 @@ php -S 127.0.0.1:8080 -t public                      # dev server
 php bin/ingest.php                                   # one ingestion pass (IMAP poll → store)
 php bin/migrate.php                                  # apply pending db/migrations/*.sql
 php bin/migrate.php --status                         # list applied/pending without running anything
+php bin/enrich.php                                   # rDNS/ASN/known-senders labelling pass
+php bin/healthcheck.php [domain] [--trigger=scheduled] # DNS/network posture check
 composer audit                                       # check dependency advisories
 ```
+
+`bin/healthcheck.php` shells out to `dig` for DS records and resolver-pinned DNSBL queries (PHP's `dns_get_record()` can do neither) — `dig`/`host` must be installed (Debian/Ubuntu: `dnsutils`).
 
 VS Code tasks (`.vscode/tasks.json`) wrap the same commands, plus `migrate` (`php bin/migrate.php`). Xdebug is configured on port 9003 (`.vscode/launch.json`) with a config for `bin/ingest.php` — adjust `pathMappings` there when debugging against the VPS instead of locally.
 
@@ -44,6 +48,12 @@ Setup not covered above: `cp config/config.sample.php config/config.php` and fil
 **Data model** (`db/migrations/`): `domains` (with three distinct policy fields — `current_published_policy` auto-read from DNS, `approved_baseline_policy` requires explicit admin approval, `target_policy` the desired end state; these serve different purposes and must not be collapsed into one field) → `reports` → `report_records` (one per source IP, `source_ip` as `VARBINARY(16)` via `INET6_ATON` for v4/v6 uniformity — see `src/Support/Ip.php`) → `auth_results`. Separately: `ip_enrichment`, `known_senders` (manual allowlist), `recommendations` (rule-engine output), `health_checks`/`health_check_items`, and the auth tables (`users`, `webauthn_credentials`, `recovery_codes`, `invitations`, `password_resets`, `sessions`, `audit_log`).
 
 **Config** (`src/Config.php`): dot-path lookup (`$config->get('imap.host')`) over the array returned by `config/config.php`, loaded once. `require()` throws if a key is missing/empty — use it for anything that must not silently default. `Database::connect()` is a lazy singleton PDO with `EMULATE_PREPARES` off (real server-side prepared statements, not client-side interpolation).
+
+**Enrichment** (`src/Enrichment/`, `bin/enrich.php`, spec §6): decoupled cron pass over `ip_enrichment` rows `ReportStore::touchEnrichment()` seeds on ingest (`source_ip`/`last_seen` only). `EnrichmentService` is PDO-free and orchestrates `RdnsResolver`/`AsnLookup` (both interface+real-impl+null/fake, so it's unit-testable) into a label via precedence: `known_senders` CIDR match (`KnownSenderMatcher`, reuses `Ip::inCidr()`) → ASN heuristic (`EspHeuristic`, small conservative `config('enrichment.known_esp_asns')` map) → `unknown`. Degrades to `NullAsnLookup` when the license-gated GeoLite2 `.mmdb` file isn't present, rather than failing.
+
+**Health check** (`src/HealthCheck/`, `bin/healthcheck.php`, spec §11): point-in-time DNS/network posture probe, independent of report data — one `HealthCheck`-interface class per §11.2 check (SPF, DMARC, cross-domain report-destination authorization, DKIM selector probing, MX, DNSSEC, MTA-STS, TLS-RPT, BIMI, STARTTLS+cert via a real SMTP handshake, Spamhaus DQS DNSBL/RHSBL, FCrDNS), run by `HealthCheckRunner` against `health_checks`/`health_check_items`. Two DNS primitives: `DnsResolver` (native `dns_get_record()`, used where any resolver is fine) and `DigLookup` (shells out to `dig`, only for DS records and resolver-pinned DNSBL queries — see `config('healthcheck.resolver')`). `error` is always distinct from `fail` (an unconfigured DQS key or a DNS timeout is *unknown*, never reported clean) — this is the one status distinction spec §11.3 insists on. The DMARC check's result also updates `domains.current_published_policy`, same discipline as `ReportStore` (never touches `approved_baseline_policy`).
+
+**Auth/RBAC** (`src/Auth/`, `src/Http/`, spec §15): invitation-only accounts, WebAuthn passkeys (preferred) or password+TOTP+recovery-codes (fallback), MFA mandatory for every role. Sessions are a custom server-side store (`SessionManager`, not PHP's native session) so admin actions like "force logout" are a targeted `DELETE`. `AuthMiddleware::guard()`/`guardPost()` enforce deny-by-default RBAC (`read_only ⊂ admin ⊂ super_admin`) and CSRF on every authenticated state-changing route. `StepUp` re-verifies the acting user (current password, or a fresh passkey assertion for passkey-only accounts) before sensitive actions, per spec §15.4/§15.5.
 
 ## Conventions from the spec worth knowing before touching related code
 

@@ -5,8 +5,9 @@ Scaffold for the self-hosted DMARC aggregate report analyzer described in
 Apache, PDO, front-controller routing, no heavy framework.
 
 > **Status: scaffold, not a finished application.** See *What's implemented*
-> below for an honest split. The ingestion path is the most complete part;
-> the dashboard, recommendation engine, health check and auth are stubs.
+> below for an honest split. Ingestion, enrichment, the domain health check,
+> and auth/RBAC are built and unit-tested; the recommendation engine,
+> alerting, and most of the dashboard are still stubs.
 
 ---
 
@@ -42,12 +43,15 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 ## Layout
 
 ```
-bin/          CLI entrypoints (cron), including migrate.php
+bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, migrate; analyze/alert are stubs
 config/       config.sample.php → copy to config.php (gitignored)
 db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
-public/       Apache DocumentRoot — front controller only
+public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js)
 src/          PSR-4 App\ namespace
-  Http/       Router
+  Auth/       Sessions, invitations, passkeys/TOTP, RBAC roles, step-up re-auth
+  Enrichment/ rDNS/ASN lookup, known_senders CIDR matching
+  HealthCheck/  Per-check DNS/network probes (SPF, DMARC, DKIM, MX, DNSSEC, STARTTLS, DNSBL, ...)
+  Http/       Router, AuthMiddleware, View, Controllers/
   Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore
   Support/    Ip helpers
 tests/        PHPUnit + fixtures
@@ -69,34 +73,49 @@ tests/        PHPUnit + fixtures
   (domain, reporter, report_id).
 - `bin/ingest.php` — IMAP poll → decompress → parse → archive → store,
   with failed messages quarantined to a separate folder rather than dropped.
-- Schema for reports, enrichment, recommendations, health checks, users/auth
-  and audit log.
+- `bin/enrich.php` — rDNS + local GeoLite2 ASN lookup + `known_senders`
+  CIDR labelling (§6), decoupled from ingestion.
+- `bin/healthcheck.php` — the full §11.2 DNS/network posture checklist
+  (SPF, DMARC, cross-domain report-destination authorization, DKIM
+  selector probing, MX, DNSSEC, MTA-STS, TLS-RPT, BIMI, STARTTLS+cert via
+  a real SMTP handshake, Spamhaus DQS DNSBL/RHSBL, FCrDNS) with `error`
+  kept distinct from `fail` throughout (§11.3).
+- Auth/RBAC (§15) — invitation-only accounts, WebAuthn passkeys or
+  password+TOTP+recovery-codes, mandatory MFA, deny-by-default RBAC
+  (read-only ⊂ admin ⊂ super admin), CSRF, step-up re-auth on sensitive
+  actions, append-only audit log.
+- Schema migrations (`bin/migrate.php`, `db/migrations/`) — numbered,
+  tracked, never edited in place.
 
 **Stubs / not yet written:**
-- `bin/enrich.php` — rDNS + ASN lookup, allowlist labelling (§6)
-- `bin/healthcheck.php` — DNS/DNSBL/transport checks (§11)
 - `bin/analyze.php` — the R1–R12 rule engine (§10)
 - `bin/alert.php` — alerting incl. the heartbeat (§8)
-- Dashboard beyond a bare domain list (§7)
-- Authentication, RBAC, invitations, passkeys (§15) — schema exists, no code
+- Dashboard beyond a domain list with basic stat tiles (§7) — no
+  per-domain drill-down, no recommendations/health-check UI, no domain
+  onboarding flow, no "approve as baseline" policy action
 
 ---
 
 ## Verify before you rely on it
 
-This scaffold could not be executed in the environment it was written in
-(no PHP runtime available), so treat it as **reviewed-but-unrun code**.
-Before trusting it:
+The pieces listed as "working" above have been exercised against a real
+MariaDB instance and, for `bin/healthcheck.php`, real DNS/SMTP/HTTPS
+traffic against live domains (Google's MX, Cloudflare's DS record, etc.) —
+not just unit tests. Still worth doing before depending on it further:
 
 1. `composer install && vendor/bin/phpunit` — confirm the tests pass.
 2. `vendor/bin/phpstan analyse src bin --level=6` — confirm it's clean.
 3. `composer audit` — check advisories for the pinned dependencies.
-4. Confirm dependency versions resolve as intended:
-   - `webklex/php-imap` ^6.0 (6.2.0 current at time of writing; needs
-     `ext-mbstring`)
-   - `web-auth/webauthn-lib` ^5.0 — **verify this constraint**; the
-     WebAuthn packages have restructured across major versions.
-5. Test the parser against **real** reports from several providers before
+4. Register a Spamhaus DQS key (spec §11.6) before relying on
+   `DnsblCheck` — with `healthcheck.spamhaus_dqs_key` empty, every DNSBL
+   item reports `error` by design, never a false "clean." The exact DQS
+   keyed-zone hostname format (`healthcheck.dnsbl_zones`) should also be
+   confirmed against current Spamhaus docs — no real key was available
+   to verify the "listed" response path while building this.
+5. Provision the GeoLite2-ASN `.mmdb` file (license-gated, not bundled)
+   for `bin/enrich.php`'s ASN lookups — it degrades gracefully without
+   one, but ASN-based labelling won't run until it's present.
+6. Test the parser against **real** reports from several providers before
    trusting it in production — vendor XML deviates from the schema
    constantly. Collecting that corpus is a standing task in spec §16.
 
@@ -107,8 +126,12 @@ Before trusting it:
 **Cron:**
 ```cron
 */20 * * * *  php /srv/dmarc/bin/ingest.php >> /var/log/dmarc/ingest.log 2>&1
+17,47 * * * * php /srv/dmarc/bin/enrich.php >> /var/log/dmarc/enrich.log 2>&1
+0    17 * * 0 php /srv/dmarc/bin/healthcheck.php --trigger=scheduled >> /var/log/dmarc/healthcheck.log 2>&1
 15   3 * * *  php /srv/dmarc/bin/alert.php  >> /var/log/dmarc/alert.log  2>&1
 ```
+
+`bin/healthcheck.php` shells out to `dig` — install `dnsutils` (Debian/Ubuntu) if it's not already present.
 
 **Apache:** DocumentRoot → `public/`. Everything else stays outside the
 web root. `.htaccess` routes to the front controller and denies dotfiles.

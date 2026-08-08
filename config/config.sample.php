@@ -77,6 +77,19 @@ return [
         'spamhaus_dqs_key' => '',
         'resolver'         => '127.0.0.1',
         'dkim_selectors'   => ['default', 'mail', 'google', 'selector1', 'selector2', 'k1', 's1', 's2'],
+
+        // §11.4 — keep every network probe lightweight and bounded.
+        'smtp_timeout_seconds' => 5,
+        'http_timeout_seconds' => 5,
+        'dig_timeout_seconds'  => 5,
+
+        // §11.6 — DQS keyed zone hostnames. Verify against current Spamhaus
+        // DQS documentation before relying on this in production; not
+        // hardcoded into DnsblCheck so it can be corrected without a code change.
+        'dnsbl_zones' => [
+            'zen' => 'zen.dqs.spamhaus.net',
+            'dbl' => 'dbl.dqs.spamhaus.net',
+        ],
     ],
 
     'alerting' => [
