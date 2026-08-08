@@ -1,0 +1,43 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "composer install",
+            "type": "shell",
+            "command": "composer install",
+            "problemMatcher": []
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "vendor/bin/phpunit",
+            "group": { "kind": "test", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "phpstan",
+            "type": "shell",
+            "command": "vendor/bin/phpstan analyse src bin --level=6",
+            "problemMatcher": []
+        },
+        {
+            "label": "load schema",
+            "type": "shell",
+            "command": "mysql -u dmarc -p dmarc < db/schema.sql",
+            "problemMatcher": []
+        },
+        {
+            "label": "serve (dev)",
+            "type": "shell",
+            "command": "php -S 127.0.0.1:8080 -t public",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "run ingest",
+            "type": "shell",
+            "command": "php bin/ingest.php",
+            "problemMatcher": []
+        }
+    ]
+}

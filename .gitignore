@@ -1,0 +1,8 @@
+/vendor/
+/config/config.php
+/var/
+/archive/
+.phpunit.result.cache
+.phpunit.cache/
+.php-cs-fixer.cache
+*.log

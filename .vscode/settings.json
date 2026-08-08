@@ -1,0 +1,38 @@
+{
+    "intelephense.environment.phpVersion": "8.3.0",
+    "intelephense.diagnostics.undefinedTypes": true,
+    "intelephense.files.exclude": ["**/vendor/**/tests/**", "**/node_modules/**"],
+
+    "editor.formatOnSave": true,
+    "editor.rulers": [120],
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+
+    "[php]": {
+        "editor.defaultFormatter": "junstyle.php-cs-fixer",
+        "editor.tabSize": 4
+    },
+
+    "php-cs-fixer.executablePath": "${workspaceFolder}/vendor/bin/php-cs-fixer",
+    "php-cs-fixer.config": ".php-cs-fixer.dist.php",
+    "php-cs-fixer.onsave": true,
+
+    "phpunit.phpunit": "${workspaceFolder}/vendor/bin/phpunit",
+    "phpstan.binPath": "${workspaceFolder}/vendor/bin/phpstan",
+
+    "files.exclude": {
+        "**/vendor": false,
+        "**/.phpunit.cache": true
+    },
+
+    "sqltools.connections": [
+        {
+            "name": "dmarc (local)",
+            "driver": "MariaDB",
+            "server": "127.0.0.1",
+            "port": 3306,
+            "database": "dmarc",
+            "username": "dmarc"
+        }
+    ]
+}
