@@ -6,8 +6,8 @@ Apache, PDO, front-controller routing, no heavy framework.
 
 > **Status: scaffold, not a finished application.** See *What's implemented*
 > below for an honest split. Ingestion, enrichment, the domain health check,
-> and auth/RBAC are built and unit-tested; the recommendation engine,
-> alerting, and most of the dashboard are still stubs.
+> the R1–R12 recommendation engine, and auth/RBAC are built and unit-tested;
+> alerting and most of the dashboard are still stubs.
 
 ---
 
@@ -43,7 +43,7 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 ## Layout
 
 ```
-bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, migrate; analyze/alert are stubs
+bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, migrate; alert is a stub
 config/       config.sample.php → copy to config.php (gitignored)
 db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
 public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js)
@@ -53,6 +53,7 @@ src/          PSR-4 App\ namespace
   HealthCheck/  Per-check DNS/network probes (SPF, DMARC, DKIM, MX, DNSSEC, STARTTLS, DNSBL, ...)
   Http/       Router, AuthMiddleware, View, Controllers/
   Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore
+  Recommendation/  R1-R12 rule engine, AnalysisContextBuilder, reconciliation
   Support/    Ip helpers
 tests/        PHPUnit + fixtures
 ```
@@ -84,12 +85,18 @@ tests/        PHPUnit + fixtures
   password+TOTP+recovery-codes, mandatory MFA, deny-by-default RBAC
   (read-only ⊂ admin ⊂ super admin), CSRF, step-up re-auth on sensitive
   actions, append-only audit log.
+- `bin/analyze.php` — the R1–R12 rule engine (§10): known/unknown-sender
+  auth hygiene, SPF lookup-limit, spoofing-volume, policy-advancement,
+  DNS-drift, non-sending, subdomain-`sp`, and forwarder-pattern rules,
+  each citing its evidence, with idempotent re-runs and auto-resolution
+  when a trigger stops firing (§10.5). Advisory only — never edits DNS.
 - Schema migrations (`bin/migrate.php`, `db/migrations/`) — numbered,
   tracked, never edited in place.
 
 **Stubs / not yet written:**
-- `bin/analyze.php` — the R1–R12 rule engine (§10)
 - `bin/alert.php` — alerting incl. the heartbeat (§8)
+- §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR
+  review that hasn't happened; ships disabled either way
 - Dashboard beyond a domain list with basic stat tiles (§7) — no
   per-domain drill-down, no recommendations/health-check UI, no domain
   onboarding flow, no "approve as baseline" policy action
@@ -128,6 +135,7 @@ not just unit tests. Still worth doing before depending on it further:
 */20 * * * *  php /srv/dmarc/bin/ingest.php >> /var/log/dmarc/ingest.log 2>&1
 17,47 * * * * php /srv/dmarc/bin/enrich.php >> /var/log/dmarc/enrich.log 2>&1
 0    17 * * 0 php /srv/dmarc/bin/healthcheck.php --trigger=scheduled >> /var/log/dmarc/healthcheck.log 2>&1
+30   4 * * *  php /srv/dmarc/bin/analyze.php >> /var/log/dmarc/analyze.log 2>&1
 15   3 * * *  php /srv/dmarc/bin/alert.php  >> /var/log/dmarc/alert.log  2>&1
 ```
 

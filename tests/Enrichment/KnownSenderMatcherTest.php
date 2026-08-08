@@ -51,4 +51,44 @@ final class KnownSenderMatcherTest extends TestCase
         $empty = new KnownSenderMatcher([]);
         self::assertNull($empty->match('1.2.3.4'));
     }
+
+    public function testMatchForDomainMatchesGlobalRule(): void
+    {
+        $matcher = new KnownSenderMatcher([
+            ['ip_or_cidr' => '203.0.113.5', 'label' => 'Global relay', 'domain_id' => null],
+        ]);
+
+        self::assertSame('Global relay', $matcher->matchForDomain('203.0.113.5', 1));
+        self::assertSame('Global relay', $matcher->matchForDomain('203.0.113.5', 2));
+    }
+
+    public function testMatchForDomainMatchesOnlyItsOwnDomain(): void
+    {
+        $matcher = new KnownSenderMatcher([
+            ['ip_or_cidr' => '203.0.113.5', 'label' => 'Domain A relay', 'domain_id' => 1],
+        ]);
+
+        self::assertSame('Domain A relay', $matcher->matchForDomain('203.0.113.5', 1));
+        self::assertNull($matcher->matchForDomain('203.0.113.5', 2));
+    }
+
+    public function testMatchForDomainFallsThroughToAGlobalRuleAfterADomainMismatch(): void
+    {
+        $matcher = new KnownSenderMatcher([
+            ['ip_or_cidr' => '203.0.113.5', 'label' => 'Domain A relay', 'domain_id' => 1],
+            ['ip_or_cidr' => '203.0.113.5', 'label' => 'Global fallback', 'domain_id' => null],
+        ]);
+
+        self::assertSame('Global fallback', $matcher->matchForDomain('203.0.113.5', 2));
+    }
+
+    public function testMatchForDomainMissingKeyDefaultsToGlobal(): void
+    {
+        // Rows built without an explicit domain_id key (e.g. older call sites) behave as global.
+        $matcher = new KnownSenderMatcher([
+            ['ip_or_cidr' => '203.0.113.5', 'label' => 'No domain_id key'],
+        ]);
+
+        self::assertSame('No domain_id key', $matcher->matchForDomain('203.0.113.5', 42));
+    }
 }

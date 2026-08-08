@@ -100,6 +100,14 @@ return [
         'pass_rate_drop_pct'  => 10,
     ],
 
+    // §10 — R1-R12 rule engine. Reuses alerting.unknown_ip_volume for R5/R6
+    // rather than a duplicate threshold.
+    'recommendation' => [
+        'window_days'           => 7,   // R1-R5, R7, R8, R10, R11
+        'sustained_window_days' => 30,  // R6
+        'sustained_min_days'    => 3,   // distinct report days required within the sustained window
+    ],
+
     // §10.8 — ships disabled; gate stays closed until the T&C + GDPR
     // review is recorded. Manual, human-reviewed submissions only.
     'community_reporting' => [

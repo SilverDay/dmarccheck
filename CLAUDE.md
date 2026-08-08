@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Self-hosted DMARC aggregate report analyzer (PHP 8.3, strict types; MariaDB 10.11+; Apache; PDO/prepared statements; no framework). Full requirements live in `docs/dmarc-report-analyzer-spec.md` — read it before implementing anything beyond ingestion, since most of the app is still unbuilt against that spec.
 
-**Status: scaffold, not a finished application.** Ingestion (decompress → parse → store), enrichment (`bin/enrich.php`), the domain health check (`bin/healthcheck.php`), and auth/RBAC (invitations, passkeys, TOTP, sessions, admin user management) are built and unit-tested. `bin/analyze.php` (the §10 recommendation engine) and `bin/alert.php` (§8 alerting) are still stubs. The dashboard covers the domain list only — no per-domain drill-down, no recommendations/health-check UI yet. Treat this split as current fact, not aspiration — verify against the file before assuming something is implemented.
+**Status: scaffold, not a finished application.** Ingestion (decompress → parse → store), enrichment (`bin/enrich.php`), the domain health check (`bin/healthcheck.php`), the R1–R12 recommendation engine (`bin/analyze.php`), and auth/RBAC (invitations, passkeys, TOTP, sessions, admin user management) are built and unit-tested. `bin/alert.php` (§8 alerting) is still a stub. The dashboard covers the domain list only — no per-domain drill-down, no recommendations/health-check UI, no §10.8 community-threat-reporting UI yet. Treat this split as current fact, not aspiration — verify against the file before assuming something is implemented.
 
 ## Commands
 
@@ -24,6 +24,7 @@ php bin/migrate.php                                  # apply pending db/migratio
 php bin/migrate.php --status                         # list applied/pending without running anything
 php bin/enrich.php                                   # rDNS/ASN/known-senders labelling pass
 php bin/healthcheck.php [domain] [--trigger=scheduled] # DNS/network posture check
+php bin/analyze.php [domain]                         # R1-R12 recommendation engine
 composer audit                                       # check dependency advisories
 ```
 
@@ -55,9 +56,11 @@ Setup not covered above: `cp config/config.sample.php config/config.php` and fil
 
 **Auth/RBAC** (`src/Auth/`, `src/Http/`, spec §15): invitation-only accounts, WebAuthn passkeys (preferred) or password+TOTP+recovery-codes (fallback), MFA mandatory for every role. Sessions are a custom server-side store (`SessionManager`, not PHP's native session) so admin actions like "force logout" are a targeted `DELETE`. `AuthMiddleware::guard()`/`guardPost()` enforce deny-by-default RBAC (`read_only ⊂ admin ⊂ super_admin`) and CSRF on every authenticated state-changing route. `StepUp` re-verifies the acting user (current password, or a fresh passkey assertion for passkey-only accounts) before sensitive actions, per spec §15.4/§15.5.
 
+**Recommendation engine** (`src/Recommendation/`, `bin/analyze.php`, spec §10): one `Rule`-interface class per R1–R12 (`src/Recommendation/Rules/`), each evaluating an `AnalysisContext` (`AnalysisContextBuilder` aggregates `report_records`/`auth_results` into per-IP `SourceStat`s over two windows, resolves known/unknown via `KnownSenderMatcher::matchForDomain()` — domain-scoped, not the plain `match()` enrichment uses — and reuses `HealthCheck\Checks\SpfCheck` for a live SPF DNS-lookup count per spec §10.2). `RecommendationReconciler` is a pure diff (this run's findings vs. previously open/acknowledged rows, matched on `(ruleId, subject)`) that drives insert/touch/auto-resolve against `RecommendationRepository` — idempotent re-runs and auto-resolution (spec §10.5) both fall out of this rather than being tracked separately. Suppressed rows are excluded from reconciliation entirely so "stop showing" sticks. `subject` (the source IP for R1/R2/R3/R12, `null` for the domain-wide rules) is round-tripped through a reserved `_subject` key inside `evidence_json` since the schema has no dedicated column for it.
+
 ## Conventions from the spec worth knowing before touching related code
 
-- **Recommendation engine (spec §10)**: rules (R1–R12) must be encoded as data/config, not hardcoded conditionals, and every recommendation must cite the exact evidence records that triggered it. `known` vs `unknown` sender classification changes a finding's meaning, not just its severity.
+- **Recommendation engine (spec §10)**: rules (R1–R12) are one class each (`src/Recommendation/Rules/`), not hardcoded conditionals in one place, and every recommendation cites the exact evidence (counts, IPs, date range) that triggered it via `RuleFinding::$evidence`. `known` vs `unknown` sender classification (via `matchForDomain()`, domain-scoped) changes a finding's meaning, not just its severity — R1–R3 (known-sender hygiene) vs R5–R6 (unknown-source spoofing) hinge entirely on it.
 - **Never recommend inbound blocking from `rua` data alone** (spec §9.4/§10.1) — a domain spoofing *to* third parties isn't necessarily hitting this server; only "investigate," never "block," unless also observed on the local MX.
 - **Health checks** (`bin/healthcheck.php`, spec §11) must distinguish `error` (DNS timeout, blocklist query failure) from `fail` (confirmed bad) — an unresolvable check is not a passing check. DNSBL/RHSBL lookups go through Spamhaus's free DQS (keyed), not the public mirrors, which block non-attributable resolvers including most hosting networks (spec §11.6).
 - **Auth** (spec §15): three global roles (read-only ⊂ admin ⊂ super admin), invitation-only account creation, MFA mandatory for everyone (passkey preferred, TOTP+password fallback), server-side role enforcement on every endpoint — the router explicitly does not grant access by route registration alone (see the NOTE in `src/Http/Router.php`).
