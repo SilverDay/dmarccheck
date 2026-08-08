@@ -96,10 +96,12 @@ final class SecurityController
         $totpData = $this->totp->generate($user->email, self::ISSUER);
         $this->sealed->setCookie(self::CEREMONY_COOKIE, self::PURPOSE_TOTP_ENROLL, ['secret' => $totpData['secret']]);
 
-        $body = '<h1>Set up an authenticator app</h1>'
-            . '<p class="secret">' . View::e($totpData['secret']) . '</p>'
-            . '<p><a href="' . View::e($totpData['provisioningUri']) . '">' . View::e($totpData['provisioningUri']) . '</a></p>'
-            . $this->confirmTotpForm($user);
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Set up an authenticator app</h2>'
+            . '<p class="card-sub">Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password).</p>'
+            . '<p class="secret" style="display:block; text-align:center; padding:10px; margin-bottom:12px;">' . View::e($totpData['secret']) . '</p>'
+            . $this->confirmTotpForm($user)
+            . '</div></div>';
 
         View::render('Set up authenticator', $body, $user, $this->auth->csrfToken());
     }
@@ -115,12 +117,7 @@ final class SecurityController
         }
 
         if (!$this->stepUp->verify($user)) {
-            View::render(
-                'Set up authenticator',
-                '<h1>Set up an authenticator app</h1><p class="error">Please re-verify to continue.</p>' . $this->confirmTotpForm($user),
-                $user,
-                $this->auth->csrfToken()
-            );
+            $this->renderTotpConfirmError($user, 'Please re-verify to continue.');
 
             return;
         }
@@ -129,8 +126,7 @@ final class SecurityController
         $code   = (string) ($_POST['code'] ?? '');
 
         if (!$this->totp->verifyPlaintext($secret, $code)) {
-            $body = '<h1>Set up an authenticator app</h1><p class="error">Invalid code.</p>' . $this->confirmTotpForm($user);
-            View::render('Set up authenticator', $body, $user, $this->auth->csrfToken());
+            $this->renderTotpConfirmError($user, 'Invalid code.');
 
             return;
         }
@@ -150,17 +146,36 @@ final class SecurityController
             }
 
             $this->audit->record($user->id, 'totp.enrolled', (string) $user->id, [], $this->clientIp());
-
-            $body = '<h1>Authenticator app enabled</h1><p>Save your recovery codes — shown once:</p>'
-                . '<ul>' . implode('', array_map(static fn (string $c): string => '<li class="secret">' . View::e($c) . '</li>', $plainCodes)) . '</ul>'
-                . '<p><a href="/account/security">Back to security settings</a></p>';
-            View::render('Recovery codes', $body, $user, $this->auth->csrfToken());
+            $this->renderRecoveryCodesPage($user, 'Authenticator app enabled', $plainCodes);
 
             return;
         }
 
         $this->audit->record($user->id, 'totp.enrolled', (string) $user->id, [], $this->clientIp());
         $this->renderPage($user, flash: 'Authenticator app enabled.');
+    }
+
+    private function renderTotpConfirmError(AuthUser $user, string $error): void
+    {
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Set up an authenticator app</h2>'
+            . '<p class="error">' . View::e($error) . '</p>'
+            . $this->confirmTotpForm($user)
+            . '</div></div>';
+        View::render('Set up authenticator', $body, $user, $this->auth->csrfToken());
+    }
+
+    /** @param list<string> $codes */
+    private function renderRecoveryCodesPage(AuthUser $user, string $title, array $codes, ?string $subtitle = null): void
+    {
+        $items = implode('', array_map(static fn (string $c): string => '<li class="secret">' . View::e($c) . '</li>', $codes));
+        $body  = '<div class="narrow"><div class="card">'
+            . '<h2>' . View::e($title) . '</h2>'
+            . '<p class="card-sub">' . View::e($subtitle ?? 'Save your recovery codes — shown once.') . '</p>'
+            . '<ul class="secret-list">' . $items . '</ul>'
+            . '<a href="/account/security" class="btn btn-primary btn-block">Back to security settings</a>'
+            . '</div></div>';
+        View::render('Recovery codes', $body, $user, $this->auth->csrfToken());
     }
 
     public function removeTotp(AuthUser $user): void
@@ -208,11 +223,7 @@ final class SecurityController
         }
 
         $this->audit->record($user->id, 'recovery_codes.regenerated', (string) $user->id, [], $this->clientIp());
-
-        $body = '<h1>New recovery codes</h1><p>Your old codes no longer work. Save these — shown once:</p>'
-            . '<ul>' . implode('', array_map(static fn (string $c): string => '<li class="secret">' . View::e($c) . '</li>', $plainCodes)) . '</ul>'
-            . '<p><a href="/account/security">Back to security settings</a></p>';
-        View::render('Recovery codes', $body, $user, $this->auth->csrfToken());
+        $this->renderRecoveryCodesPage($user, 'New recovery codes', $plainCodes, 'Your old codes no longer work. Save these — shown once.');
     }
 
     /** POST /account/passkeys/register/options */
@@ -355,92 +366,106 @@ final class SecurityController
         $csrf        = $this->auth->csrfToken();
         $stepUpField = $this->stepUp->fieldHtml($user);
 
-        $totpSection = $user->hasTotp()
-            ? '<form method="post" action="/account/totp/remove" class="stack">'
-                . View::csrfField($csrf) . $stepUpField
-                . '<p><button type="submit">Remove password sign-in</button></p></form>'
-            : '<p><a href="/account/totp/enroll">Set up an authenticator app</a></p>';
-
-        $recoverySection = $user->hasTotp()
-            ? '<form method="post" action="/account/recovery-codes/regenerate" class="stack">'
-                . View::csrfField($csrf) . $stepUpField
-                . '<p><button type="submit">Regenerate recovery codes</button></p></form>'
-            : '';
-
-        $passkeyRows = implode('', array_map(function (array $c) use ($csrf, $stepUpField): string {
-            return '<tr><td>' . View::e($c['label'] ?? 'Passkey') . '</td>'
-                . '<td>' . View::e($c['created_at']) . '</td>'
-                . '<td><form method="post" action="/account/passkeys/remove" class="inline">'
-                . View::csrfField($csrf) . $stepUpField
-                . '<input type="hidden" name="credential_id" value="' . (int) $c['id'] . '">'
-                . '<button type="submit">Remove</button></form></td></tr>';
-        }, $this->webauthnStore->listForDisplay($user->id)));
-
-        $body = '<h1>Security settings</h1>';
-
-        if ($flash !== null) {
-            $body .= '<p class="flash">' . View::e($flash) . '</p>';
-        }
+        $body = '<div class="page-head"><div><h1>Security settings</h1><div class="sub">' . View::e($user->email) . '</div></div></div>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<h2>Password</h2>';
+        $body .= '<div class="narrow" style="margin-top:0;">';
+
+        // --- Password ---
+        $body .= '<div class="card"><h2>Password</h2>';
 
         if ($user->hasPassword()) {
-            $body .= '<form method="post" action="/account/password" class="stack">'
+            $body .= '<form method="post" action="/account/password">'
                 . View::csrfField($csrf)
-                . '<p><label for="current_password">Current password</label>'
-                . '<input type="password" id="current_password" name="current_password" required></p>'
-                . '<p><label for="new_password">New password</label>'
-                . '<input type="password" id="new_password" name="new_password" minlength="' . PasswordHasher::MIN_LENGTH . '" required></p>'
-                . '<p><label for="new_password_confirm">Confirm new password</label>'
-                . '<input type="password" id="new_password_confirm" name="new_password_confirm" required></p>'
-                . '<p><button type="submit">Change password</button></p>'
+                . '<div class="field"><label for="current_password">Current password</label>'
+                . '<input type="password" id="current_password" name="current_password" required autocomplete="current-password"></div>'
+                . '<div class="field"><label for="new_password">New password</label>'
+                . '<input type="password" id="new_password" name="new_password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autocomplete="new-password"></div>'
+                . '<div class="field"><label for="new_password_confirm">Confirm new password</label>'
+                . '<input type="password" id="new_password_confirm" name="new_password_confirm" required autocomplete="new-password"></div>'
+                . '<button type="submit" class="btn btn-secondary" style="margin-top:6px;">Update password</button>'
                 . '</form>';
         } else {
-            $body .= '<p>You sign in with a passkey only.</p>';
+            $body .= '<p class="card-sub">You sign in with a passkey only.</p>';
         }
 
-        $body .= '<h2>Authenticator app</h2>' . $totpSection
-            . ($recoverySection !== '' ? '<h2>Recovery codes</h2>' . $recoverySection : '')
-            . '<h2>Passkeys</h2>'
-            . ($passkeyRows !== '' ? '<table><tr><th>Label</th><th>Added</th><th></th></tr>' . $passkeyRows . '</table>' : '<p>None registered.</p>')
-            . '<form class="stack" onsubmit="return false">'
-            . View::csrfField($csrf)
-            . $stepUpField
-            . '<p><label for="passkey_label">Passkey name (optional)</label>'
-            . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></p>'
-            . '<p><button type="button" data-webauthn="register"'
-            . ' data-options-url="/account/passkeys/register/options" data-verify-url="/account/passkeys/register/verify">Add a passkey</button></p>'
-            . '</form>';
+        $body .= '</div>';
+
+        // --- Authenticator app ---
+        $body .= '<div class="card"><h2>Authenticator app</h2>';
+
+        if ($user->hasTotp()) {
+            $body .= '<p class="card-sub">' . View::badge('success', 'Enabled') . '</p>'
+                . '<div class="list-row"><div class="meta">' . View::icon('key')
+                . '<div><div class="name">Recovery codes</div><div class="detail">Regenerate if you\'re running low</div></div></div>'
+                . '<form method="post" action="/account/recovery-codes/regenerate">' . View::csrfField($csrf) . $stepUpField
+                . '<button type="submit" class="btn btn-secondary btn-sm">Regenerate</button></form></div>'
+                . '<form method="post" action="/account/totp/remove" style="margin-top:14px;">'
+                . View::csrfField($csrf) . $stepUpField
+                . '<button type="submit" class="btn btn-danger">' . View::icon('trash') . 'Remove password sign-in</button></form>';
+        } else {
+            $body .= '<p class="card-sub">Not set up.</p>'
+                . '<a href="/account/totp/enroll" class="btn btn-secondary">' . View::icon('lock') . 'Set up an authenticator app</a>';
+        }
+
+        $body .= '</div>';
+
+        // --- Passkeys ---
+        $passkeys = $this->webauthnStore->listForDisplay($user->id);
+        $body .= '<div class="card"><h2>Passkeys</h2>'
+            . '<p class="card-sub">' . \count($passkeys) . ' registered &mdash; a passkey signs you in without a password.</p>';
+
+        foreach ($passkeys as $c) {
+            $body .= '<div class="list-row"><div class="meta">' . View::icon('key')
+                . '<div><div class="name">' . View::e((string) ($c['label'] ?? 'Passkey')) . '</div>'
+                . '<div class="detail">Added ' . View::e($c['created_at']) . '</div></div></div>'
+                . '<form method="post" action="/account/passkeys/remove">'
+                . View::csrfField($csrf) . $stepUpField
+                . '<input type="hidden" name="credential_id" value="' . (int) $c['id'] . '">'
+                . '<button type="submit" class="btn btn-danger btn-sm">' . View::icon('trash') . 'Remove</button></form></div>';
+        }
+
+        $body .= '<form onsubmit="return false" style="margin-top:14px;">'
+            . View::csrfField($csrf) . $stepUpField
+            . '<div class="field"><label for="passkey_label">Passkey name (optional)</label>'
+            . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></div>'
+            . '<button type="button" class="btn btn-secondary" data-webauthn="register"'
+            . ' data-options-url="/account/passkeys/register/options" data-verify-url="/account/passkeys/register/verify"'
+            . ' data-error-target="#webauthn-error-register">'
+            . View::icon('key') . 'Add a passkey</button>'
+            . '<p id="webauthn-error-register" class="error"></p>'
+            . '</form></div>';
 
         if (!$user->hasPassword()) {
-            $body .= '<h2>Re-verify (step-up)</h2>'
-                . '<p>Passkey-only accounts must re-verify with a passkey before a sensitive change — click below, then retry the action.</p>'
+            $body .= '<div class="card"><h2>Re-verify</h2>'
+                . '<p class="card-sub">Passkey-only accounts re-verify with a passkey before a sensitive change — verify here, then retry the action below.</p>'
                 . '<form onsubmit="return false">' . View::csrfField($csrf)
-                . '<p><button type="button" data-webauthn="authenticate"'
-                . ' data-options-url="/account/stepup/passkey/options" data-verify-url="/account/stepup/passkey/verify">Verify with passkey</button></p>'
-                . '</form>';
+                . '<button type="button" class="btn btn-secondary" data-webauthn="authenticate"'
+                . ' data-options-url="/account/stepup/passkey/options" data-verify-url="/account/stepup/passkey/verify"'
+                . ' data-error-target="#webauthn-error-stepup">'
+                . View::icon('key') . 'Verify with passkey</button>'
+                . '<p id="webauthn-error-stepup" class="error"></p>'
+                . '</form></div>';
         }
 
-        $body .= '<p id="webauthn-error" class="error"></p><script src="/assets/webauthn.js"></script>';
+        $body .= '</div><script src="/assets/webauthn.js"></script>';
 
         View::render('Security settings', $body, $user, $csrf, $flash);
     }
-
 
     private function confirmTotpForm(AuthUser $user): string
     {
         $csrf = $this->auth->csrfToken();
 
-        return '<form method="post" action="/account/totp/confirm" class="stack">'
+        return '<form method="post" action="/account/totp/confirm">'
             . View::csrfField($csrf)
             . $this->stepUp->fieldHtml($user)
-            . '<p><label for="code">6-digit code</label>'
-            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></p>'
-            . '<p><button type="submit">Confirm</button></p>'
+            . '<div class="field"><label for="code">6-digit code</label>'
+            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">Confirm</button>'
             . '</form>';
     }
 

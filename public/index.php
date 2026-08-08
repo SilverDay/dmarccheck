@@ -148,7 +148,7 @@ $router->post('/admin/users/revoke-sessions', $auth->guardPost(Roles::SUPER_ADMI
 
 // --- Dashboard (spec §7.1/§7.3 — every view requires at least read-only) ---
 $router->get('/', $auth->guard(Roles::READ_ONLY, static function () use ($pdo, $auth): void {
-    $stmt = $pdo->query(
+    $domains = $pdo->query(
         'SELECT d.domain,
                 d.current_published_policy,
                 d.target_policy,
@@ -156,23 +156,50 @@ $router->get('/', $auth->guard(Roles::READ_ONLY, static function () use ($pdo, $
            FROM domains d
           WHERE d.active = 1
           ORDER BY d.domain'
-    );
+    )->fetchAll();
+
+    $reportsLast7d = (int) $pdo->query(
+        'SELECT COUNT(*) FROM reports WHERE received_at >= NOW() - INTERVAL 7 DAY'
+    )->fetchColumn();
+
+    // A domain-level "reached its own target yet" indicator derived straight
+    // from the two policy columns already on the row — not a recommendation
+    // (that engine, spec §10, isn't built yet), just reflects what's here.
+    $normalize = static fn (string $policy): string => strtolower(preg_replace('/\s+/', '', $policy) ?? '');
 
     $rows = '';
 
-    foreach ($stmt as $row) {
+    foreach ($domains as $row) {
+        $published = $row['current_published_policy'] !== null ? (string) $row['current_published_policy'] : null;
+        $target = (string) $row['target_policy'];
+        $lastReport = $row['last_report'] !== null ? (string) $row['last_report'] : null;
+
+        $status = match (true) {
+            $lastReport === null => \App\Http\View::badge('neutral', 'Onboarding'),
+            $published !== null && $normalize($published) === $normalize($target) => \App\Http\View::badge('success', 'At target'),
+            default => \App\Http\View::badge('warning', 'Advancing'),
+        };
+
         $rows .= sprintf(
-            '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>',
+            '<tr><td class="domain-cell">%s</td><td><span class="policy-pill">%s</span></td>'
+                . '<td><span class="policy-pill">%s</span></td><td class="mono">%s</td><td>%s</td></tr>',
             htmlspecialchars((string) $row['domain'], ENT_QUOTES),
-            htmlspecialchars((string) ($row['current_published_policy'] ?? '—'), ENT_QUOTES),
-            htmlspecialchars((string) $row['target_policy'], ENT_QUOTES),
-            htmlspecialchars((string) ($row['last_report'] ?? 'never'), ENT_QUOTES)
+            htmlspecialchars($published ?? 'not yet observed', ENT_QUOTES),
+            htmlspecialchars($target, ENT_QUOTES),
+            htmlspecialchars($lastReport ?? 'never', ENT_QUOTES),
+            $status
         );
     }
 
-    $body = '<h1>Domains</h1><table><tr>'
-        . '<th>Domain</th><th>Published</th><th>Target</th><th>Last report</th></tr>'
-        . $rows . '</table>';
+    $body = '<div class="page-head"><div><h1>Domains</h1>'
+        . '<div class="sub">' . \count($domains) . ' monitored domain' . (\count($domains) === 1 ? '' : 's') . '</div></div></div>'
+        . '<div class="stats">'
+        . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
+        . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
+        . '</div>'
+        . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+        . '<th>Domain</th><th>Published policy</th><th>Target policy</th><th>Last report</th><th>Status</th>'
+        . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
 
     \App\Http\View::render('Domains', $body, $auth->currentUser(), $auth->csrfToken());
 }));

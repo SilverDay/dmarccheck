@@ -303,33 +303,35 @@ final class AdminUsersController
     {
         $csrf        = $this->auth->csrfToken();
         $stepUpField = $this->stepUp->fieldHtml($actor);
+        $users       = $this->users->all();
 
         $rows = implode('', array_map(function (AuthUser $u) use ($actor, $csrf, $stepUpField): string {
             return $this->userRow($u, $actor, $csrf, $stepUpField);
-        }, $this->users->all()));
+        }, $users));
 
-        $body = '<h1>Users</h1>';
-
-        if ($flash !== null) {
-            $body .= '<p class="flash">' . View::e($flash) . '</p>';
-        }
+        $body = '<div class="page-head"><div><h1>Users</h1>'
+            . '<div class="sub">' . \count($users) . ' account' . (\count($users) === 1 ? '' : 's') . ' &middot; super admin only</div></div></div>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<table><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>' . $rows . '</table>'
+        $body .= '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+            . '<th>Email</th><th>Role</th><th>Status</th><th>Actions</th>'
+            . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+
+        $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
             . '<h2>Invite a user</h2>'
-            . '<form method="post" action="/admin/users/invite" class="stack">'
+            . '<form method="post" action="/admin/users/invite">'
             . View::csrfField($csrf) . $stepUpField
-            . '<p><label for="email">Email</label><input type="email" id="email" name="email" required></p>'
-            . '<p><label for="role">Role</label><select id="role" name="role">'
+            . '<div class="field"><label for="email">Email</label><input type="email" id="email" name="email" required></div>'
+            . '<div class="field"><label for="role">Role</label><select id="role" name="role" class="role-select" style="width:100%; padding:8px 10px;">'
             . '<option value="' . Roles::READ_ONLY . '">Read-only</option>'
             . '<option value="' . Roles::ADMIN . '">Admin</option>'
             . '<option value="' . Roles::SUPER_ADMIN . '">Super admin</option>'
-            . '</select></p>'
-            . '<p><button type="submit">Send invitation</button></p>'
-            . '</form>';
+            . '</select></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">' . View::icon('mail') . 'Send invitation</button>'
+            . '</form></div></div>';
 
         View::render('Users', $body, $actor, $csrf, $flash);
     }
@@ -345,16 +347,16 @@ final class AdminUsersController
         }
 
         if ($u->status === 'active') {
-            $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpField);
             $actions[] = $this->actionForm('/admin/users/password-reset', 'Send password reset', $idField, $csrfField, $stepUpField);
             $actions[] = $this->actionForm(
                 '/admin/users/reset-mfa',
                 'Reset MFA',
                 $idField,
                 $csrfField,
-                $stepUpField . '<p><label>Reason<input type="text" name="reason" required></label></p>'
+                $stepUpField . '<input type="text" name="reason" placeholder="Reason (required)" required style="font-size:12px; padding:4px 6px; border:1px solid var(--color-border); border-radius:4px; margin-right:6px;">'
             );
             $actions[] = $this->actionForm('/admin/users/revoke-sessions', 'Force logout', $idField, $csrfField, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpField, danger: true);
         }
 
         if ($u->status === 'disabled') {
@@ -362,28 +364,43 @@ final class AdminUsersController
         }
 
         if ($u->id !== $actor->id) {
-            $actions[] = $this->actionForm('/admin/users/delete', 'Delete', $idField, $csrfField, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/delete', 'Delete', $idField, $csrfField, $stepUpField, danger: true);
+        } else {
+            $actions[] = '<button class="btn btn-secondary btn-sm" disabled>You</button>';
         }
 
-        $roleForm = '<form method="post" action="/admin/users/role" class="inline">'
+        $roleForm = '<form method="post" action="/admin/users/role">'
             . $idField . $csrfField . $stepUpField
-            . '<select name="role">'
+            . '<select name="role" class="role-select">'
             . '<option value="' . Roles::READ_ONLY . '"' . ($u->role === Roles::READ_ONLY ? ' selected' : '') . '>Read-only</option>'
             . '<option value="' . Roles::ADMIN . '"' . ($u->role === Roles::ADMIN ? ' selected' : '') . '>Admin</option>'
             . '<option value="' . Roles::SUPER_ADMIN . '"' . ($u->role === Roles::SUPER_ADMIN ? ' selected' : '') . '>Super admin</option>'
-            . '</select> <button type="submit">Update role</button></form>';
+            . '</select></form>';
 
-        return '<tr><td>' . View::e($u->email) . '</td>'
+        $statusBadge = match ($u->status) {
+            'active'   => View::badge('success', 'Active'),
+            'invited'  => View::badge('warning', 'Invited'),
+            'disabled' => View::badge('neutral', 'Disabled'),
+            default    => View::badge('neutral', $u->status),
+        };
+
+        return '<tr><td class="domain-cell">' . View::e($u->email) . '</td>'
             . '<td>' . $roleForm . '</td>'
-            . '<td>' . View::e($u->status) . '</td>'
-            . '<td>' . implode(' ', $actions) . '</td></tr>';
+            . '<td>' . $statusBadge . '</td>'
+            . '<td class="actions-cell">' . implode('', $actions) . '</td></tr>';
     }
 
-    private function actionForm(string $action, string $label, string $idField, string $csrfField, string $stepUpField): string
-    {
-        return '<form method="post" action="' . View::e($action) . '" class="inline">'
+    private function actionForm(
+        string $action,
+        string $label,
+        string $idField,
+        string $csrfField,
+        string $stepUpField,
+        bool $danger = false,
+    ): string {
+        return '<form method="post" action="' . View::e($action) . '" style="display:inline-flex; align-items:center;">'
             . $idField . $csrfField . $stepUpField
-            . '<button type="submit">' . View::e($label) . '</button></form>';
+            . '<button type="submit" class="btn btn-sm ' . ($danger ? 'btn-danger' : 'btn-secondary') . '">' . View::e($label) . '</button></form>';
     }
 
     private function clientIp(): ?string

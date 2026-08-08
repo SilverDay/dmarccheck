@@ -49,8 +49,11 @@ final class PasswordResetController
             );
         }
 
-        $body = '<h1>Password reset</h1>'
-            . '<p>If that address has an account, a reset link has been sent.</p>';
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Password reset</h2>'
+            . '<p class="card-sub">If that address has an account, a reset link has been sent.</p>'
+            . '<a href="/login" class="btn btn-secondary btn-block">Back to login</a>'
+            . '</div></div>';
         View::render('Password reset', $body, null);
     }
 
@@ -95,37 +98,44 @@ final class PasswordResetController
         $this->sessions->destroyAllForUser($userId);
         $this->audit->record($userId, 'password_reset.completed', (string) $userId, [], $this->clientIp());
 
-        $body = '<h1>Password reset</h1><p>Your password has been changed. <a href="/login">Log in</a> — you\'ll still need your second factor.</p>';
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Password reset</h2>'
+            . '<p class="card-sub">Your password has been changed. You\'ll still need your second factor to sign in.</p>'
+            . '<a href="/login" class="btn btn-primary btn-block">Log in</a>'
+            . '</div></div>';
         View::render('Password reset', $body, null);
     }
 
     private function renderRequestForm(): void
     {
-        $body = '<h1>Reset your password</h1>'
-            . '<form method="post" action="/password-reset" class="stack">'
-            . '<p><label for="email">Email</label>'
-            . '<input type="email" id="email" name="email" required autofocus></p>'
-            . '<p><button type="submit">Send reset link</button></p>'
-            . '</form>';
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Reset your password</h2>'
+            . '<p class="card-sub">We\'ll email a link if that address has an account.</p>'
+            . '<form method="post" action="/password-reset">'
+            . '<div class="field"><label for="email">Email</label>'
+            . '<input type="email" id="email" name="email" required autofocus autocomplete="email"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">Send reset link</button>'
+            . '</form></div></div>';
         View::render('Password reset', $body, null);
     }
 
     private function renderConfirmForm(string $token, ?string $error = null): void
     {
-        $body = '<h1>Set a new password</h1>';
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Set a new password</h2>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<form method="post" action="/password-reset/confirm" class="stack">'
+        $body .= '<form method="post" action="/password-reset/confirm">'
             . '<input type="hidden" name="token" value="' . View::e($token) . '">'
-            . '<p><label for="password">New password</label>'
-            . '<input type="password" id="password" name="password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autofocus></p>'
-            . '<p><label for="password_confirm">Confirm new password</label>'
-            . '<input type="password" id="password_confirm" name="password_confirm" required></p>'
-            . '<p><button type="submit">Set password</button></p>'
-            . '</form>';
+            . '<div class="field"><label for="password">New password</label>'
+            . '<input type="password" id="password" name="password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autofocus autocomplete="new-password"></div>'
+            . '<div class="field"><label for="password_confirm">Confirm new password</label>'
+            . '<input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">Set password</button>'
+            . '</form></div></div>';
         View::render('Password reset', $body, null);
     }
 

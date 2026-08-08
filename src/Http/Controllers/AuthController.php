@@ -254,25 +254,31 @@ final class AuthController
 
     private function renderLoginForm(?string $error = null, string $email = ''): void
     {
-        $body = '<h1>Log in</h1>';
+        $body = '<div class="narrow" style="max-width:400px;">'
+            . '<div class="login-mark">' . View::icon('shield') . '</div>'
+            . '<div class="card">'
+            . '<h2 style="text-align:center;">Sign in</h2>'
+            . '<p class="card-sub" style="text-align:center;">DMARC Analyzer</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<form method="post" action="/login" class="stack">'
-            . '<p><label for="email">Email</label>'
-            . '<input type="email" id="email" name="email" value="' . View::e($email) . '" required autofocus></p>'
-            . '<p><label for="password">Password</label>'
-            . '<input type="password" id="password" name="password" required></p>'
-            . '<p><button type="submit">Log in</button></p>'
+        $body .= '<form method="post" action="/login">'
+            . '<div class="field"><label for="email">Email</label>'
+            . '<input type="email" id="email" name="email" value="' . View::e($email) . '" required autofocus autocomplete="email"></div>'
+            . '<div class="field"><label for="password">Password</label>'
+            . '<input type="password" id="password" name="password" required autocomplete="current-password"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block" style="margin-top:6px;">Continue</button>'
             . '</form>'
-            . '<hr>'
-            . '<p><button type="button" data-webauthn="authenticate"'
+            . '<div class="divider-label" style="margin-top:16px;">or</div>'
+            . '<button type="button" class="btn btn-secondary btn-block" data-webauthn="authenticate"'
             . ' data-options-url="/login/passkey/options" data-verify-url="/login/passkey/verify"'
-            . ' data-extra-fields="email">Sign in with a passkey</button></p>'
+            . ' data-extra-fields="email">' . View::icon('key') . 'Sign in with a passkey</button>'
             . '<p id="webauthn-error" class="error"></p>'
-            . '<p><a href="/password-reset">Forgot your password?</a></p>'
+            . '</div>'
+            . '<div class="helper-link"><a href="/password-reset">Forgot your password?</a></div>'
+            . '</div>'
             . '<script src="/assets/webauthn.js"></script>';
 
         View::render('Log in', $body, null);
@@ -280,17 +286,19 @@ final class AuthController
 
     private function renderTotpForm(?string $error = null): void
     {
-        $body = '<h1>Verification code</h1><p>Enter the 6-digit code from your authenticator app, or a recovery code.</p>';
+        $body = '<div class="narrow" style="max-width:400px;"><div class="card">'
+            . '<h2>Verification code</h2>'
+            . '<p class="card-sub">Enter the 6-digit code from your authenticator app, or a recovery code.</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<form method="post" action="/login/totp" class="stack">'
-            . '<p><label for="code">Code</label>'
-            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></p>'
-            . '<p><button type="submit">Verify</button></p>'
-            . '</form>';
+        $body .= '<form method="post" action="/login/totp">'
+            . '<div class="field"><label for="code">Code</label>'
+            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">Verify</button>'
+            . '</form></div></div>';
 
         View::render('Verification code', $body, null);
     }

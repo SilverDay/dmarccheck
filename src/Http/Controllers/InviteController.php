@@ -237,31 +237,40 @@ final class InviteController
     private function renderAcceptForm(string $token, string $email, ?string $error = null): void
     {
         $tokenField = '<input type="hidden" name="token" value="' . View::e($token) . '">';
-        $body       = '<h1>Accept invitation</h1><p>' . View::e($email) . '</p>';
+        $body       = '<div class="narrow">'
+            . '<div class="login-mark">' . View::icon('shield') . '</div>'
+            . '<div class="card">'
+            . '<h2 style="text-align:center;">Accept invitation</h2>'
+            . '<p class="card-sub" style="text-align:center;">' . View::e($email) . '</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<h2>Set a password</h2>'
-            . '<form method="post" action="/invite/accept-password" class="stack">'
+        $body .= '<form method="post" action="/invite/accept-password">'
             . $tokenField
-            . '<p><label for="password">Password</label>'
-            . '<input type="password" id="password" name="password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autofocus></p>'
-            . '<p><label for="password_confirm">Confirm password</label>'
-            . '<input type="password" id="password_confirm" name="password_confirm" required></p>'
-            . '<p><button type="submit">Continue — you\'ll set up an authenticator app next</button></p>'
+            . '<div class="field"><label for="password">Password</label>'
+            . '<input type="password" id="password" name="password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autofocus autocomplete="new-password"></div>'
+            . '<div class="field"><label for="password_confirm">Confirm password</label>'
+            . '<input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block" style="margin-top:6px;">Continue — you\'ll set up an authenticator app next</button>'
             . '</form>'
-            . '<h2>Or use a passkey</h2>'
-            . '<form class="stack" onsubmit="return false">'
+            . '</div>'
+
+            . '<div class="card">'
+            . '<h2>Or use a passkey instead</h2>'
+            . '<p class="card-sub">A passkey signs you in without a password.</p>'
+            . '<form onsubmit="return false">'
             . $tokenField
-            . '<p><label for="passkey_label">Passkey name (optional)</label>'
-            . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></p>'
-            . '<p><button type="button" data-webauthn="register"'
+            . '<div class="field"><label for="passkey_label">Passkey name (optional)</label>'
+            . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></div>'
+            . '<button type="button" class="btn btn-secondary btn-block" data-webauthn="register"'
             . ' data-options-url="/invite/accept-passkey/options" data-verify-url="/invite/accept-passkey/verify"'
-            . ' data-extra-fields="token">Register a passkey</button></p>'
+            . ' data-extra-fields="token">' . View::icon('key') . 'Register a passkey</button>'
             . '</form>'
             . '<p id="webauthn-error" class="error"></p>'
+            . '</div>'
+            . '</div>'
             . '<script src="/assets/webauthn.js"></script>';
 
         View::render('Accept invitation', $body, null);
@@ -270,20 +279,20 @@ final class InviteController
     private function renderTotpSetupForm(string $secret, string $email, ?string $error = null): void
     {
         $uri  = $this->totp->provisioningUriFor($secret, $email, self::ISSUER);
-        $body = '<h1>Set up your authenticator app</h1>'
-            . '<p>Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password):</p>'
-            . '<p class="secret">' . View::e($secret) . '</p>'
-            . '<p><a href="' . View::e($uri) . '">' . View::e($uri) . '</a></p>';
+        $body = '<div class="narrow"><div class="card">'
+            . '<h2>Set up your authenticator app</h2>'
+            . '<p class="card-sub">Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password).</p>'
+            . '<p class="secret" style="display:block; text-align:center; padding:10px; margin-bottom:12px;">' . View::e($secret) . '</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<form method="post" action="/invite/totp-confirm" class="stack">'
-            . '<p><label for="code">6-digit code</label>'
-            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></p>'
-            . '<p><button type="submit">Confirm</button></p>'
-            . '</form>';
+        $body .= '<form method="post" action="/invite/totp-confirm">'
+            . '<div class="field"><label for="code">6-digit code</label>'
+            . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></div>'
+            . '<button type="submit" class="btn btn-primary btn-block">Confirm</button>'
+            . '</form></div></div>';
 
         View::render('Set up authenticator', $body, null);
     }
@@ -292,10 +301,12 @@ final class InviteController
     private function renderRecoveryCodes(array $codes): void
     {
         $items = implode('', array_map(static fn (string $c): string => '<li class="secret">' . View::e($c) . '</li>', $codes));
-        $body  = '<h1>Save your recovery codes</h1>'
-            . '<p>Each code can be used once if you lose access to your authenticator app. Store them somewhere safe — they will not be shown again.</p>'
-            . '<ul>' . $items . '</ul>'
-            . '<p><a href="/">Continue to the dashboard</a></p>';
+        $body  = '<div class="narrow"><div class="card">'
+            . '<h2>Save your recovery codes</h2>'
+            . '<p class="card-sub">Each code can be used once if you lose access to your authenticator app. Store them somewhere safe — they will not be shown again.</p>'
+            . '<ul class="secret-list">' . $items . '</ul>'
+            . '<a href="/" class="btn btn-primary btn-block">Continue to the dashboard</a>'
+            . '</div></div>';
 
         View::render('Recovery codes', $body, null);
     }
