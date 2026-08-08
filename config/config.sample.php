@@ -52,7 +52,22 @@ return [
     'enrichment' => [
         // Local DB avoids per-query third-party disclosure (§14)
         'geolite2_asn_db' => __DIR__ . '/../var/GeoLite2-ASN.mmdb',
-        'maxmind_key'     => '',
+        // Unused by bin/enrich.php itself — reserved for a future geoipupdate-style
+        // DB refresh mechanism (§6: "refresh DB monthly" is an ops task, not this script's job).
+        'maxmind_key' => '',
+
+        'batch_limit'  => 500,  // IPs processed per run, mirrors ingest.batch_limit
+        'refresh_days' => 30,   // re-enrich IPs older than this, not just brand-new ones
+
+        // §6 — ASN-based heuristic label, the fallback tier below known_senders and
+        // above unknown. Deliberately small and conservative: only ASNs we're
+        // confident about, since a wrong number silently mislabels real traffic.
+        // Starting point for an admin to extend, not an authoritative database.
+        'known_esp_asns' => [
+            15169 => 'Google',
+            8075  => 'Microsoft',
+            16509 => 'Amazon AWS',
+        ],
     ],
 
     'healthcheck' => [

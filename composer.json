@@ -13,6 +13,7 @@
         "ext-sodium": "*",
         "ext-zip": "*",
         "ext-zlib": "*",
+        "maxmind-db/reader": "^1.13",
         "spomky-labs/otphp": "^11.0",
         "web-auth/webauthn-lib": "^5.0",
         "webklex/php-imap": "^6.0"
