@@ -1,5 +1,9 @@
--- DMARC Report Analyzer — schema
+-- DMARC Report Analyzer — baseline schema (migration 0001)
 -- MariaDB 10.11+ / utf8mb4. Implements spec §3, §10.5, §11.3, §15.8.
+--
+-- Applied via bin/migrate.php, tracked in schema_migrations. This file is
+-- the full schema as of the switch to migrations — everything after it
+-- ships as its own numbered file in db/migrations/, never edited in place.
 
 SET NAMES utf8mb4;
 

@@ -21,9 +21,9 @@
             "problemMatcher": []
         },
         {
-            "label": "load schema",
+            "label": "migrate",
             "type": "shell",
-            "command": "mysql -u dmarc -p dmarc < db/schema.sql",
+            "command": "php bin/migrate.php",
             "problemMatcher": []
         },
         {

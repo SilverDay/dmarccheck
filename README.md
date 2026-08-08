@@ -16,7 +16,7 @@ Apache, PDO, front-controller routing, no heavy framework.
 composer install
 cp config/config.sample.php config/config.php   # then fill in
 mysql -u root -p -e "CREATE DATABASE dmarc CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u dmarc -p dmarc < db/schema.sql
+php bin/migrate.php
 mysql -u dmarc -p dmarc < db/seed-domains.sql   # optional: the 10 domains
 vendor/bin/phpunit
 ```
@@ -29,7 +29,7 @@ Open the folder in VS Code and accept the recommended extensions prompt
 | `composer install` | install dependencies |
 | `test` | run PHPUnit (default test task) |
 | `phpstan` | static analysis at level 6 |
-| `load schema` | apply `db/schema.sql` |
+| `migrate` | apply pending `db/migrations/*.sql` |
 | `serve (dev)` | `php -S 127.0.0.1:8080 -t public` |
 | `run ingest` | one ingestion pass |
 
@@ -42,9 +42,9 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 ## Layout
 
 ```
-bin/          CLI entrypoints (cron)
+bin/          CLI entrypoints (cron), including migrate.php
 config/       config.sample.php → copy to config.php (gitignored)
-db/           schema.sql, seed-domains.sql
+db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
 public/       Apache DocumentRoot — front controller only
 src/          PSR-4 App\ namespace
   Http/       Router

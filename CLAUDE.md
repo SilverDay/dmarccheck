@@ -20,12 +20,14 @@ vendor/bin/php-cs-fixer fix --dry-run --diff         # lint check (also: compose
 vendor/bin/php-cs-fixer fix                          # apply lint fixes
 php -S 127.0.0.1:8080 -t public                      # dev server
 php bin/ingest.php                                   # one ingestion pass (IMAP poll → store)
+php bin/migrate.php                                  # apply pending db/migrations/*.sql
+php bin/migrate.php --status                         # list applied/pending without running anything
 composer audit                                       # check dependency advisories
 ```
 
-VS Code tasks (`.vscode/tasks.json`) wrap the same commands, plus `load schema` (`mysql -u dmarc -p dmarc < db/schema.sql`). Xdebug is configured on port 9003 (`.vscode/launch.json`) with a config for `bin/ingest.php` — adjust `pathMappings` there when debugging against the VPS instead of locally.
+VS Code tasks (`.vscode/tasks.json`) wrap the same commands, plus `migrate` (`php bin/migrate.php`). Xdebug is configured on port 9003 (`.vscode/launch.json`) with a config for `bin/ingest.php` — adjust `pathMappings` there when debugging against the VPS instead of locally.
 
-Setup not covered above: `cp config/config.sample.php config/config.php` and fill in (gitignored, mode `0640`); create the `dmarc` DB and load `db/schema.sql` then optionally `db/seed-domains.sql` (the 10 real domains).
+Setup not covered above: `cp config/config.sample.php config/config.php` and fill in (gitignored, mode `0640`); create the `dmarc` DB and run `php bin/migrate.php` then optionally load `db/seed-domains.sql` (the 10 real domains).
 
 ## Architecture
 
@@ -37,7 +39,9 @@ Setup not covered above: `cp config/config.sample.php config/config.php` and fil
 
 **`ReportStore` (`src/Ingest/ReportStore.php`)**: persists a `ParsedReport` idempotently against the schema below.
 
-**Data model** (`db/schema.sql`): `domains` (with three distinct policy fields — `current_published_policy` auto-read from DNS, `approved_baseline_policy` requires explicit admin approval, `target_policy` the desired end state; these serve different purposes and must not be collapsed into one field) → `reports` → `report_records` (one per source IP, `source_ip` as `VARBINARY(16)` via `INET6_ATON` for v4/v6 uniformity — see `src/Support/Ip.php`) → `auth_results`. Separately: `ip_enrichment`, `known_senders` (manual allowlist), `recommendations` (rule-engine output), `health_checks`/`health_check_items`, and the auth tables (`users`, `webauthn_credentials`, `recovery_codes`, `invitations`, `password_resets`, `sessions`, `audit_log`).
+**Schema migrations** (`bin/migrate.php`, `db/migrations/`): the schema is versioned as numbered, immutable `.sql` files applied in order and tracked in a `schema_migrations` table — never edit a committed migration in place; a schema change ships as a new file. MySQL/MariaDB DDL isn't transactional (implicit commit per statement), so keep each migration to one focused change. `db/migrations/0001_baseline.sql` is the full schema as of the switch to this system.
+
+**Data model** (`db/migrations/`): `domains` (with three distinct policy fields — `current_published_policy` auto-read from DNS, `approved_baseline_policy` requires explicit admin approval, `target_policy` the desired end state; these serve different purposes and must not be collapsed into one field) → `reports` → `report_records` (one per source IP, `source_ip` as `VARBINARY(16)` via `INET6_ATON` for v4/v6 uniformity — see `src/Support/Ip.php`) → `auth_results`. Separately: `ip_enrichment`, `known_senders` (manual allowlist), `recommendations` (rule-engine output), `health_checks`/`health_check_items`, and the auth tables (`users`, `webauthn_credentials`, `recovery_codes`, `invitations`, `password_resets`, `sessions`, `audit_log`).
 
 **Config** (`src/Config.php`): dot-path lookup (`$config->get('imap.host')`) over the array returned by `config/config.php`, loaded once. `require()` throws if a key is missing/empty — use it for anything that must not silently default. `Database::connect()` is a lazy singleton PDO with `EMULATE_PREPARES` off (real server-side prepared statements, not client-side interpolation).
 

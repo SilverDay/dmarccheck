@@ -36,7 +36,8 @@
     "scripts": {
         "test": "phpunit",
         "stan": "phpstan analyse src bin --level=6",
-        "lint": "php-cs-fixer fix --dry-run --diff"
+        "lint": "php-cs-fixer fix --dry-run --diff",
+        "migrate": "php bin/migrate.php"
     },
     "config": {
         "sort-packages": true
