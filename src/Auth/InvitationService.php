@@ -20,8 +20,14 @@ final class InvitationService
     ) {
     }
 
-    /** @return string the raw token — email it, never store or log it */
-    public function issue(string $email, string $role, int $invitedByUserId): string
+    /**
+     * $invitedByUserId is nullable to allow bootstrapping the first
+     * super_admin, when no actor exists yet to be the inviter — matches
+     * the schema's `invited_by INT UNSIGNED DEFAULT NULL`.
+     *
+     * @return string the raw token — email it, never store or log it
+     */
+    public function issue(string $email, string $role, ?int $invitedByUserId): string
     {
         if (!Roles::isValid($role)) {
             throw new AuthException('Invalid role.');
