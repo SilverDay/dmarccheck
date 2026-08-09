@@ -2,7 +2,7 @@
     "name": "silverday/dmarc-analyzer",
     "description": "Self-hosted DMARC aggregate report analyzer",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "require": {
         "php": ">=8.3",
         "ext-dom": "*",

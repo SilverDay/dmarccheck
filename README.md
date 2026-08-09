@@ -1,8 +1,10 @@
-# DMARC Report Analyzer — starter package
+# DMARC Report Analyzer
 
-Scaffold for the self-hosted DMARC aggregate report analyzer described in
-`dmarc-report-analyzer-spec.md`. PHP 8.3 (strict types), MariaDB 10.11+,
-Apache, PDO, front-controller routing, no heavy framework.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Self-hosted DMARC aggregate report analyzer. PHP 8.3 (strict types),
+MariaDB 10.11+, Apache, PDO, front-controller routing, no heavy framework.
+Full requirements are in `docs/dmarc-report-analyzer-spec.md`.
 
 > **Status: scaffold, not a finished application.** See *What's implemented*
 > below for an honest split. Ingestion, enrichment, the domain health check,
@@ -168,3 +170,10 @@ and not merely by convention.
 **Secrets:** `config/config.php` is gitignored. It holds DB credentials,
 the IMAP password, and the MaxMind/Spamhaus DQS keys. Keep it `0640`,
 owned by the web/CLI user.
+
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
