@@ -978,16 +978,17 @@ final class DomainController
 
         $items = '';
 
-        foreach ($health->items as $item) {
+        foreach ($health->items as $index => $item) {
             $helpSlug = $this->healthCheckHelpSlug($item->checkName);
             $reason   = isset($item->detail['reason']) ? (string) $item->detail['reason'] : null;
+            $fixes    = $this->suggestFix($item->checkName, $item->detail, $domain, $mailFrom, $mxHosts);
 
             $items .= '<div class="health-item">'
                 . View::badge($this->healthStatusVariant($item->status), $item->checkName)
                 . ($helpSlug !== null ? View::helpTooltip($helpSlug, 'What the ' . $item->checkName . ' check does') : '')
                 . '<span class="health-category">' . View::e($item->category) . '</span>'
                 . ($reason !== null ? '<span class="health-reason">' . View::e($reason) . '</span>' : '')
-                . $this->renderFixBlocks($this->suggestFix($item->checkName, $item->detail, $domain, $mailFrom, $mxHosts))
+                . $this->renderFixTrigger($fixes, 'fix-tpl-' . $index)
                 . '</div>';
         }
 
@@ -1057,13 +1058,24 @@ final class DomainController
     }
 
     /** @param list<HealthCheckFix> $fixes */
-    private function renderFixBlocks(array $fixes): string
+    /**
+     * Renders a "Fix me" button + a hidden <template> holding the actual
+     * fix content — help.js clones the template into a floating popover on
+     * click (same mechanism as the "?" tooltips), rather than rendering the
+     * fix inline. .health-grid is a CSS grid, and any in-flow content
+     * growth in one cell inflates the whole row to match — the exact bug
+     * already fixed once for the tooltip popover, recurring here until the
+     * fix content stopped living in normal document flow at all.
+     *
+     * @param list<HealthCheckFix> $fixes
+     */
+    private function renderFixTrigger(array $fixes, string $templateId): string
     {
         if ($fixes === []) {
             return '';
         }
 
-        $html = '';
+        $blocks = '';
 
         foreach ($fixes as $fix) {
             // &#10; not a raw \n — a literal newline inside an HTML attribute
@@ -1073,7 +1085,7 @@ final class DomainController
             // MTA-STS policy-file fix.
             $copyValue = str_replace("\n", '&#10;', View::e($fix->recordValue));
 
-            $html .= '<div class="fix-block">'
+            $blocks .= '<div class="fix-block">'
                 . '<div class="fix-label">' . View::e($fix->label) . '</div>'
                 . '<code class="rec-evidence">' . View::e($fix->recordName) . '  ' . View::e($fix->recordType)
                 . '  &quot;' . View::e($fix->recordValue) . '&quot;</code>'
@@ -1082,7 +1094,8 @@ final class DomainController
                 . '</div>';
         }
 
-        return $html;
+        return '<button type="button" class="btn btn-secondary btn-sm fix-trigger" data-fix-target="' . View::e($templateId) . '">Fix me</button>'
+            . '<template id="' . View::e($templateId) . '">' . $blocks . '</template>';
     }
 
     /** @param list<array<string, mixed>> $rows */

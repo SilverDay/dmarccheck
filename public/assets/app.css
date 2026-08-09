@@ -311,9 +311,15 @@ td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px;
 .health-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
 .health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-left: auto; }
 .health-reason { flex-basis: 100%; font-size: 11px; color: var(--color-fg-muted); }
+/* .fix-trigger opens a floating .fix-popover (help.js) — the fix content
+   itself lives in a <template>, never rendered in-flow, so it can't
+   inflate a .health-grid row the way an always-visible block would. */
+.fix-trigger { flex-basis: 100%; margin-top: 2px; align-self: flex-start; }
+.fix-popover { max-width: 420px; }
+.fix-block + .fix-block { margin-top: 10px; }
 .fix-block {
-  flex-basis: 100%; margin-top: 6px; padding: 10px; border: 1px solid var(--color-border);
-  border-radius: 6px; background: var(--color-surface);
+  padding: 10px; border: 1px solid var(--color-border);
+  border-radius: 6px; background: var(--color-surface-muted);
 }
 .fix-label { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
 .fix-block .rec-evidence { display: block; margin: 6px 0; }
