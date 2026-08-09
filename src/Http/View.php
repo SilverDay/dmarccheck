@@ -44,22 +44,24 @@ final class View
 
         if ($user !== null) {
             echo '<div class="topnav">'
-               . '<a href="/">Domains</a>'
-               . '<a href="/help">Help</a>'
-               . '<a href="/account/security">Security</a>';
+               . '<a href="/">Domains</a>';
 
             if (Roles::atLeast($user->role, Roles::ADMIN)) {
                 echo '<a href="/admin/known-senders">Allowlist</a>';
             }
 
+            echo '<a href="/help">Help</a>';
+
             if (Roles::atLeast($user->role, Roles::SUPER_ADMIN)) {
-                echo '<a href="/admin/users">Users</a>';
-                echo '<a href="/admin/audit-log">Audit log</a>';
+                echo '<span class="topnav-admin">'
+                   . '<a href="/admin/users">Users</a>'
+                   . '<a href="/admin/audit-log">Audit log</a>'
+                   . '</span>';
             }
 
             echo '<div class="who">'
-               . '<span class="id"><span class="email">' . self::e($user->email) . '</span>'
-               . '<span class="role">' . self::e(str_replace('_', ' ', $user->role)) . '</span></span>'
+               . '<a class="id" href="/account/security" title="Security settings"><span class="email">' . self::e($user->email) . '</span>'
+               . '<span class="role">' . self::e(str_replace('_', ' ', $user->role)) . '</span></a>'
                . '<form method="post" action="/logout">'
                . self::csrfField($csrfToken)
                . '<button type="submit" class="logout-btn" title="Log out" aria-label="Log out">'
