@@ -43,9 +43,12 @@ use PDO;
  */
 final class DomainController
 {
-    private const int TREND_WINDOW_DAYS   = 30;
-    private const int SOURCE_ROW_LIMIT    = 200;
-    private const int RECENT_REPORT_LIMIT = 20;
+    private const int TREND_WINDOW_DAYS      = 30;
+    private const int SOURCE_ROW_LIMIT       = 200;
+    private const int RECENT_REPORT_LIMIT    = 20;
+    private const int CARD_TREND_WINDOW_DAYS = 14;
+    private const int ATTENTION_LIMIT        = 8;
+    private const int ACTIVITY_LIMIT         = 15;
 
     public function __construct(
         private readonly PDO $pdo,
@@ -275,6 +278,27 @@ final class DomainController
         return PolicyLevel::compose($p, $sp);
     }
 
+    /**
+     * Worst-status-wins grade for one health-check run's tally (spec
+     * §7.1/§11) — extends healthStatusVariant()'s single-item convention
+     * to a whole run: 'fail' outranks everything; 'error' (a blind spot,
+     * never a pass, per §11.3) outranks 'warn'; 'warn' outranks
+     * pass/info.
+     *
+     * @param array<string, int> $tally
+     *
+     * @return array{variant: string, label: string}
+     */
+    public static function healthGrade(array $tally): array
+    {
+        return match (true) {
+            ($tally[HealthCheckItemResult::FAIL] ?? 0)  > 0  => ['variant' => 'danger', 'label' => 'Fail'],
+            ($tally[HealthCheckItemResult::ERROR] ?? 0) > 0 => ['variant' => 'neutral', 'label' => 'Error'],
+            ($tally[HealthCheckItemResult::WARN] ?? 0)  > 0  => ['variant' => 'warning', 'label' => 'Warn'],
+            default                                         => ['variant' => 'success', 'label' => 'Pass'],
+        };
+    }
+
     /** @param array<string, mixed> $domain */
     private function requireStepUp(AuthUser $actor, array $domain): bool
     {
@@ -298,7 +322,8 @@ final class DomainController
     private function renderIndex(AuthUser $user, ?string $flash = null, ?string $error = null): void
     {
         $domains = $this->pdo->query(
-            'SELECT d.domain,
+            'SELECT d.id,
+                    d.domain,
                     d.current_published_policy,
                     d.target_policy,
                     (SELECT MAX(received_at) FROM reports r WHERE r.domain_id = d.id) AS last_report
@@ -310,35 +335,55 @@ final class DomainController
         $reportsLast7d = (int) $this->pdo->query(
             'SELECT COUNT(*) FROM reports WHERE received_at >= NOW() - INTERVAL 7 DAY'
         )->fetchColumn();
+        $healthByDomain    = $this->healthChecks->latestForAllDomains();
+        $recCountsByDomain = $this->recommendations->countsBySeverityForAllDomains();
+        $trendByDomain     = $this->fetchCardTrendData();
+        $ingestionHealth   = $this->fetchIngestionHealth();
 
-        // A domain-level "reached its own target yet" indicator derived straight
-        // from the two policy columns already on the row — not a recommendation
-        // (that's spec §10, a separate signal), just reflects what's here.
-        $normalize = static fn (string $policy): string => strtolower(preg_replace('/\s+/', '', $policy) ?? '');
+        $lastHealthCheckAt = null;
 
-        $rows = '';
+        foreach ($healthByDomain as $h) {
+            if ($lastHealthCheckAt === null || $h->runAt > $lastHealthCheckAt) {
+                $lastHealthCheckAt = $h->runAt;
+            }
+        }
+
+        $cards = '';
 
         foreach ($domains as $row) {
-            $published  = $row['current_published_policy'] !== null ? (string) $row['current_published_policy'] : null;
-            $target     = (string) $row['target_policy'];
-            $lastReport = $row['last_report'] !== null ? (string) $row['last_report'] : null;
+            $domainId  = (int) $row['id'];
+            $published = $row['current_published_policy'] !== null ? (string) $row['current_published_policy'] : null;
 
-            $status = match (true) {
-                $lastReport                                   === null                => View::badge('neutral', 'Onboarding'),
-                $published !== null && $normalize($published) === $normalize($target) => View::badge('success', 'At target'),
-                default                                                               => View::badge('warning', 'Advancing'),
-            };
+            $grade = isset($healthByDomain[$domainId])
+                ? self::healthGrade($healthByDomain[$domainId]->tally)
+                : ['variant' => 'neutral', 'label' => 'Not checked'];
 
-            $rows .= sprintf(
-                '<tr><td class="domain-cell"><a href="%s">%s</a></td><td><span class="policy-pill">%s</span></td>'
-                    . '<td><span class="policy-pill">%s</span></td><td class="mono">%s</td><td>%s</td></tr>',
-                View::e('/domain?' . http_build_query(['domain' => $row['domain']])),
-                View::e((string) $row['domain']),
-                View::e($published ?? 'not yet observed'),
-                View::e($target),
-                View::e($lastReport ?? 'never'),
-                $status
-            );
+            $recCounts = $recCountsByDomain[$domainId] ?? [];
+            $recBadges = '';
+
+            foreach (['high', 'medium', 'low', 'info'] as $severity) {
+                if (($recCounts[$severity] ?? 0) > 0) {
+                    $variant = match ($severity) {
+                        'high'   => 'danger',
+                        'medium' => 'warning',
+                        default  => 'neutral',
+                    };
+                    $recBadges .= View::badge($variant, $recCounts[$severity] . ' ' . ucfirst($severity));
+                }
+            }
+
+            if ($recBadges === '') {
+                $recBadges = '<span class="card-sub">No open recommendations</span>';
+            }
+
+            $cards .= '<div class="card posture-card">'
+                . '<div class="posture-head"><a href="' . View::e('/domain?' . http_build_query(['domain' => $row['domain']])) . '">'
+                . '<h2>' . View::e((string) $row['domain']) . '</h2></a>'
+                . View::badge($grade['variant'], $grade['label']) . '</div>'
+                . '<span class="policy-pill">' . View::e($published ?? 'not yet observed') . '</span>'
+                . SvgBarChart::renderSparkline($trendByDomain[$domainId] ?? [])
+                . '<div class="posture-recs">' . $recBadges . '</div>'
+                . '</div>';
         }
 
         $body = '<div class="page-head"><div><h1>Domains</h1>'
@@ -348,13 +393,24 @@ final class DomainController
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
+        $ingestBadge = match ($ingestionHealth['last_run_status']) {
+            'ok'      => View::badge('success', $ingestionHealth['last_success_at'] ?? '—'),
+            'error'   => View::badge('danger', 'Failed ' . ($ingestionHealth['last_run_at'] ?? '')),
+            'running' => View::badge('neutral', 'Running'),
+            default   => View::badge('neutral', 'Never run'),
+        };
+
         $body .= '<div class="stats">'
             . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
             . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
-            . '</div>'
-            . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
-            . '<th>Domain</th><th>Published policy</th><th>Target policy</th><th>Last report</th><th>Status</th>'
-            . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+            . '<div class="stat-tile"><div class="label">Last ingestion</div><div class="value" style="font-size:14px;">' . $ingestBadge . '</div></div>'
+            . '<div class="stat-tile"><div class="label">Last health check</div><div class="value mono" style="font-size:14px;">' . View::e($lastHealthCheckAt ?? 'never') . '</div></div>'
+            . '</div>';
+
+        $body .= '<div class="section-head"><h2>Domains</h2></div>'
+            . '<div class="posture-grid">' . $cards . '</div>';
+
+        $body .= $this->renderAttentionPanel() . $this->renderRecentActivity();
 
         if (Roles::atLeast($user->role, Roles::ADMIN)) {
             $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
@@ -367,6 +423,95 @@ final class DomainController
         }
 
         View::render('Domains', $body, $user, $this->auth->csrfToken(), $flash);
+    }
+
+    /**
+     * Attention panel (spec §7.1): highest-severity open recommendations
+     * across all domains. Sourced from persisted `recommendations`, not a
+     * live re-run of the (deliberately stateless) alert checks — see
+     * CLAUDE.md's Alerting section for why nothing there is persisted.
+     */
+    private function renderAttentionPanel(): string
+    {
+        $rows  = $this->recommendations->topOpenAcrossDomains(self::ATTENTION_LIMIT);
+        $items = '';
+
+        foreach ($rows as $entry) {
+            $row     = $entry['row'];
+            $subject = $row->subject !== null ? ' &middot; <span class="mono">' . View::e($row->subject) . '</span>' : '';
+
+            $items .= '<div class="rec-item">'
+                . View::badge($this->severityVariant($row->severity), strtoupper($row->severity))
+                . '<span class="mono">' . View::e($entry['domain']) . '</span>'
+                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>' . $subject
+                . '<span class="rec-meta">last seen ' . View::e($row->lastSeen) . '</span>'
+                . '</div>';
+        }
+
+        if ($items === '') {
+            return '<div class="section-head"><h2>Attention</h2></div><p class="card-sub">No high/medium recommendations open.</p>';
+        }
+
+        return '<div class="section-head"><h2>Attention</h2></div><div class="rec-list">' . $items . '</div>';
+    }
+
+    /**
+     * Recent activity (spec §7.1): domain onboarding/policy-change audit
+     * entries plus newly seen unknown senders, merged and time-sorted.
+     * "Policy changes detected" is admin-driven audit history here, not
+     * DNS-observed drift — the latter is never persisted anywhere in the
+     * app (see CLAUDE.md).
+     */
+    private function renderRecentActivity(): string
+    {
+        $relevantActions = ['domain.onboarded', 'domain.policy_updated', 'domain.baseline_approved'];
+
+        $events = [];
+
+        foreach ($this->audit->recent(self::ACTIVITY_LIMIT, 'domain.%') as $entry) {
+            if (!\in_array($entry->action, $relevantActions, true)) {
+                continue;
+            }
+
+            // The in_array() guard above already narrows $entry->action to
+            // exactly these three values, so this match is exhaustive.
+            $label = match ($entry->action) {
+                'domain.onboarded'         => 'Domain onboarded',
+                'domain.policy_updated'    => 'Target policy updated',
+                'domain.baseline_approved' => 'Baseline approved',
+            };
+
+            $events[] = [
+                'at'   => $entry->createdAt,
+                'html' => '<span class="rec-rule">' . View::e($label) . '</span>'
+                    . '<span class="mono">' . View::e($entry->target ?? '') . '</span>'
+                    . '<span class="rec-meta">' . View::e($entry->createdAt) . '</span>',
+            ];
+        }
+
+        foreach ($this->fetchNewlySeenUnknownSenders(self::ACTIVITY_LIMIT) as $sender) {
+            $events[] = [
+                'at'   => $sender['first_seen'],
+                'html' => '<span class="rec-rule">New unknown sender</span>'
+                    . '<span class="mono">' . View::e($sender['ip']) . '</span>'
+                    . '<span class="rec-meta">' . View::e($sender['first_seen']) . '</span>',
+            ];
+        }
+
+        usort($events, static fn (array $a, array $b): int => $b['at'] <=> $a['at']);
+        $events = \array_slice($events, 0, self::ACTIVITY_LIMIT);
+
+        if ($events === []) {
+            return '<div class="section-head"><h2>Recent activity</h2></div><p class="card-sub">Nothing recent.</p>';
+        }
+
+        $items = '';
+
+        foreach ($events as $event) {
+            $items .= '<div class="rec-item">' . $event['html'] . '</div>';
+        }
+
+        return '<div class="section-head"><h2>Recent activity</h2></div><div class="rec-list">' . $items . '</div>';
     }
 
     public function show(AuthUser $user): void
@@ -586,6 +731,92 @@ final class DomainController
         unset($r);
 
         return $records;
+    }
+
+    /**
+     * Bulk cross-domain trend data for the overview posture-card grid
+     * (spec §7.1) — one query for every active domain rather than
+     * fetchTrendData() called N times per page load.
+     *
+     * @return array<int, list<array{day: string, passed: int, failed: int}>> domain_id => days
+     */
+    private function fetchCardTrendData(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT r.domain_id AS domain_id,
+                    DATE(r.date_begin) AS day,
+                    SUM(CASE WHEN rr.dkim_result = 'pass' OR rr.spf_result = 'pass' THEN rr.`count` ELSE 0 END) AS passed,
+                    SUM(CASE WHEN NOT (rr.dkim_result = 'pass' OR rr.spf_result = 'pass') THEN rr.`count` ELSE 0 END) AS failed
+               FROM report_records rr
+               JOIN reports r ON r.id = rr.report_id
+               JOIN domains d ON d.id = r.domain_id AND d.active = 1
+              WHERE r.date_begin >= NOW() - INTERVAL " . self::CARD_TREND_WINDOW_DAYS . ' DAY
+              GROUP BY r.domain_id, DATE(r.date_begin)
+              ORDER BY r.domain_id, day'
+        );
+
+        $byDomain = [];
+
+        foreach ($stmt as $row) {
+            $byDomain[(int) $row['domain_id']][] = [
+                'day'    => (string) $row['day'],
+                'passed' => (int) $row['passed'],
+                'failed' => (int) $row['failed'],
+            ];
+        }
+
+        return $byDomain;
+    }
+
+    /**
+     * Last ingestion run's status/timestamp, and the last *successful*
+     * run's timestamp separately — the overview dashboard's ingestion
+     * health indicator (spec §7.1, ties to the heartbeat alert, §8).
+     *
+     * @return array{last_success_at: ?string, last_run_status: ?string, last_run_at: ?string}
+     */
+    private function fetchIngestionHealth(): array
+    {
+        $last = $this->pdo->query(
+            'SELECT status, finished_at FROM ingest_runs ORDER BY id DESC LIMIT 1'
+        )->fetch();
+
+        $lastSuccessAt = $this->pdo->query(
+            "SELECT MAX(finished_at) FROM ingest_runs WHERE status = 'ok'"
+        )->fetchColumn();
+
+        return [
+            'last_success_at' => $lastSuccessAt !== false && $lastSuccessAt !== null ? (string) $lastSuccessAt : null,
+            'last_run_status' => $last          !== false ? (string) $last['status'] : null,
+            'last_run_at'     => $last          !== false && $last['finished_at'] !== null ? (string) $last['finished_at'] : null,
+        ];
+    }
+
+    /**
+     * IPs first observed as 'unknown' recently — the overview dashboard's
+     * recent-activity feed (spec §7.1). Uses ip_enrichment.first_seen,
+     * which ReportStore::touchEnrichment() only ever sets on first
+     * INSERT, never on subsequent updates.
+     *
+     * @return list<array{ip: string, first_seen: string}>
+     */
+    private function fetchNewlySeenUnknownSenders(int $limit): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT source_ip, first_seen FROM ip_enrichment
+              WHERE first_seen IS NOT NULL AND label = 'unknown'
+              ORDER BY first_seen DESC LIMIT ?"
+        );
+        $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $senders = [];
+
+        foreach ($stmt as $row) {
+            $senders[] = ['ip' => Ip::toString((string) $row['source_ip']), 'first_seen' => (string) $row['first_seen']];
+        }
+
+        return $senders;
     }
 
     /**

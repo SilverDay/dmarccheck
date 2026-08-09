@@ -44,22 +44,66 @@ final class RecommendationRepository
         $rows = [];
 
         foreach ($stmt as $row) {
-            /** @var mixed $evidence */
-            $evidence = $row['evidence_json'] !== null ? json_decode((string) $row['evidence_json'], true) : [];
-            $evidence = \is_array($evidence) ? $evidence : [];
-            $subject  = $evidence['_subject'] ?? null;
-            unset($evidence['_subject']);
+            $rows[] = $this->mapRow($row);
+        }
 
-            $rows[] = new RecommendationRow(
-                (int) $row['id'],
-                (string) $row['rule_id'],
-                (string) $row['severity'],
-                \is_string($subject) ? $subject : null,
-                $evidence,
-                (string) $row['first_seen'],
-                (string) $row['last_seen'],
-                (string) $row['state'],
-            );
+        return $rows;
+    }
+
+    /**
+     * Open+acknowledged recommendation counts by severity, across all
+     * active domains — the overview dashboard's posture-card grid
+     * (spec §7.1). Same open+acknowledged state definition as
+     * forDisplay(); acknowledged isn't visually distinguished anywhere in
+     * the UI today, so it stays folded into "open" here too.
+     *
+     * @return array<int, array<string, int>> domain_id => severity => count
+     */
+    public function countsBySeverityForAllDomains(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT rec.domain_id, rec.severity, COUNT(*) AS cnt
+               FROM recommendations rec
+               JOIN domains d ON d.id = rec.domain_id AND d.active = 1
+              WHERE rec.state IN ('open', 'acknowledged')
+              GROUP BY rec.domain_id, rec.severity"
+        );
+
+        $counts = [];
+
+        foreach ($stmt as $row) {
+            $counts[(int) $row['domain_id']][(string) $row['severity']] = (int) $row['cnt'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Highest-severity open+acknowledged recommendations across all
+     * active domains, filtered to high/medium — the overview dashboard's
+     * Attention panel (spec §7.1). Deliberately narrower than
+     * forDisplay(): low/info recommendations aren't "what needs me
+     * today" and already have a home on the per-domain drill-down.
+     *
+     * @return list<array{domain: string, row: RecommendationRow}>
+     */
+    public function topOpenAcrossDomains(int $limit): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT d.domain, rec.id, rec.rule_id, rec.severity, rec.evidence_json, rec.first_seen, rec.last_seen, rec.state
+               FROM recommendations rec
+               JOIN domains d ON d.id = rec.domain_id AND d.active = 1
+              WHERE rec.state IN ('open', 'acknowledged') AND rec.severity IN ('high', 'medium')
+              ORDER BY FIELD(rec.severity, 'high', 'medium'), rec.last_seen DESC
+              LIMIT ?"
+        );
+        $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = [];
+
+        foreach ($stmt as $row) {
+            $rows[] = ['domain' => (string) $row['domain'], 'row' => $this->mapRow($row)];
         }
 
         return $rows;
@@ -139,5 +183,26 @@ final class RecommendationRepository
     private function encodeEvidence(RuleFinding $finding): string
     {
         return json_encode(['_subject' => $finding->subject, ...$finding->evidence], JSON_THROW_ON_ERROR);
+    }
+
+    /** @param array<string, mixed> $row */
+    private function mapRow(array $row): RecommendationRow
+    {
+        /** @var mixed $evidence */
+        $evidence = $row['evidence_json'] !== null ? json_decode((string) $row['evidence_json'], true) : [];
+        $evidence = \is_array($evidence) ? $evidence : [];
+        $subject  = $evidence['_subject'] ?? null;
+        unset($evidence['_subject']);
+
+        return new RecommendationRow(
+            (int) $row['id'],
+            (string) $row['rule_id'],
+            (string) $row['severity'],
+            \is_string($subject) ? $subject : null,
+            $evidence,
+            (string) $row['first_seen'],
+            (string) $row['last_seen'],
+            (string) $row['state'],
+        );
     }
 }

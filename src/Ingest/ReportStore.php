@@ -122,12 +122,18 @@ final class ReportStore
         }
     }
 
-    /** Seeds the enrichment row; the enrichment worker fills in rDNS/ASN later (§6). */
+    /**
+     * Seeds the enrichment row; the enrichment worker fills in rDNS/ASN
+     * later (§6). first_seen is only ever set here, on INSERT — the
+     * ON DUPLICATE KEY UPDATE clause deliberately never touches it, so it
+     * stays fixed at first observation (feeds the dashboard's "newly seen
+     * unknown senders", spec §7.1).
+     */
     private function touchEnrichment(string $ip): void
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO ip_enrichment (source_ip, last_seen)
-             VALUES (?, NOW())
+            'INSERT INTO ip_enrichment (source_ip, first_seen, last_seen)
+             VALUES (?, NOW(), NOW())
              ON DUPLICATE KEY UPDATE last_seen = NOW()'
         );
 

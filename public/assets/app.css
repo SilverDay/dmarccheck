@@ -252,6 +252,13 @@ td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px;
 .health-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
 .health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
+.posture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.posture-card { display: flex; flex-direction: column; gap: 8px; }
+.posture-card .posture-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.posture-card .posture-head h2 { font-size: 14px; margin: 0; }
+.posture-card .posture-sparkline { width: 100%; height: 28px; display: block; }
+.posture-card .posture-recs { display: flex; gap: 6px; flex-wrap: wrap; }
+
 .rec-list { display: flex; flex-direction: column; gap: 8px; }
 .rec-item { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rec-rule { font-weight: 700; font-size: 13px; }

@@ -54,4 +54,35 @@ final class DomainControllerTest extends TestCase
     {
         self::assertNull(DomainController::composeTargetPolicy('', ''));
     }
+
+    public function testEmptyTallyGradesAsPass(): void
+    {
+        self::assertSame(['variant' => 'success', 'label' => 'Pass'], DomainController::healthGrade([]));
+    }
+
+    public function testAnyFailOutranksEverything(): void
+    {
+        $tally = ['pass' => 5, 'warn' => 2, 'error' => 1, 'fail' => 1];
+
+        self::assertSame(['variant' => 'danger', 'label' => 'Fail'], DomainController::healthGrade($tally));
+    }
+
+    public function testErrorOutranksWarnWhenNoFail(): void
+    {
+        $tally = ['pass' => 5, 'warn' => 2, 'error' => 1];
+
+        self::assertSame(['variant' => 'neutral', 'label' => 'Error'], DomainController::healthGrade($tally));
+    }
+
+    public function testWarnOutranksPassWhenNoFailOrError(): void
+    {
+        $tally = ['pass' => 5, 'warn' => 1];
+
+        self::assertSame(['variant' => 'warning', 'label' => 'Warn'], DomainController::healthGrade($tally));
+    }
+
+    public function testPassOrInfoOnlyGradesAsPass(): void
+    {
+        self::assertSame(['variant' => 'success', 'label' => 'Pass'], DomainController::healthGrade(['pass' => 10, 'info' => 2]));
+    }
 }

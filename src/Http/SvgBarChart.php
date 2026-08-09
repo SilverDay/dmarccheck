@@ -21,6 +21,9 @@ final class SvgBarChart
     private const int BAR_GAP     = 2;
     private const int LABEL_SPACE = 18;
 
+    private const int SPARK_WIDTH  = 120;
+    private const int SPARK_HEIGHT = 28;
+
     /** @param list<array{day: string, passed: int, failed: int}> $days */
     public static function render(array $days): string
     {
@@ -81,6 +84,61 @@ final class SvgBarChart
             '<svg class="trend-chart" viewBox="0 0 %d %d" preserveAspectRatio="none" role="img" aria-label="Pass/fail volume over time">%s</svg>',
             self::WIDTH,
             self::HEIGHT,
+            $bars,
+        );
+    }
+
+    /**
+     * A small card-scale variant of render() — same stacked-bar shape and
+     * theme-correct colors, but no tooltips/day-axis labels (illegible at
+     * this size). Used by the overview dashboard's posture cards
+     * (spec §7.1), where a full chart per card would be too heavy.
+     *
+     * @param list<array{day: string, passed: int, failed: int}> $days
+     */
+    public static function renderSparkline(array $days): string
+    {
+        if ($days === []) {
+            return '<span class="chart-empty">No data</span>';
+        }
+
+        $maxTotal = 1;
+
+        foreach ($days as $d) {
+            $maxTotal = max($maxTotal, $d['passed'] + $d['failed']);
+        }
+
+        $barWidth = self::SPARK_WIDTH / \count($days);
+        $bars     = '';
+
+        foreach ($days as $i => $d) {
+            $total = $d['passed'] + $d['failed'];
+            $x     = $i * $barWidth;
+
+            $failedHeight = $total > 0 ? ($d['failed'] / $maxTotal) * self::SPARK_HEIGHT : 0.0;
+            $passedHeight = $total > 0 ? ($d['passed'] / $maxTotal) * self::SPARK_HEIGHT : 0.0;
+            $barW         = max(1.0, $barWidth - self::BAR_GAP);
+
+            $bars .= sprintf(
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-danger-fg)"/>',
+                $x,
+                self::SPARK_HEIGHT - $failedHeight,
+                $barW,
+                $failedHeight,
+            );
+            $bars .= sprintf(
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-success-fg)"/>',
+                $x,
+                self::SPARK_HEIGHT - $failedHeight - $passedHeight,
+                $barW,
+                $passedHeight,
+            );
+        }
+
+        return sprintf(
+            '<svg class="posture-sparkline" viewBox="0 0 %d %d" preserveAspectRatio="none" role="img" aria-label="Pass/fail volume, recent days">%s</svg>',
+            self::SPARK_WIDTH,
+            self::SPARK_HEIGHT,
             $bars,
         );
     }

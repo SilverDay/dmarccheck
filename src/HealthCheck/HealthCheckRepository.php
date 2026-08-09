@@ -64,6 +64,47 @@ final class HealthCheckRepository
         $stmt->execute([$policyString, $domainId]);
     }
 
+    /**
+     * The latest health-check run's status tally per active domain — a
+     * lighter cross-domain query than latestForDomain(), which returns
+     * full item detail for one domain's drill-down. Feeds the overview
+     * dashboard's posture-card grade (spec §7.1/§11).
+     *
+     * @return array<int, HealthCheckLatestRun> keyed by domain_id
+     */
+    public function latestForAllDomains(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT hc.domain_id, hc.run_at, hc.trigger_, hci.status, COUNT(*) AS cnt
+               FROM health_checks hc
+               JOIN (SELECT domain_id, MAX(id) AS id FROM health_checks GROUP BY domain_id) latest
+                 ON latest.domain_id = hc.domain_id AND latest.id = hc.id
+               JOIN domains d ON d.id = hc.domain_id AND d.active = 1
+               JOIN health_check_items hci ON hci.check_id = hc.id
+              GROUP BY hc.domain_id, hc.run_at, hc.trigger_, hci.status"
+        );
+
+        /** @var array<int, array{runAt: string, trigger: string, tally: array<string, int>}> $byDomain */
+        $byDomain = [];
+
+        foreach ($stmt as $row) {
+            $domainId = (int) $row['domain_id'];
+
+            $byDomain[$domainId] ??= [
+                'runAt'   => (string) $row['run_at'],
+                'trigger' => (string) $row['trigger_'],
+                'tally'   => [],
+            ];
+
+            $byDomain[$domainId]['tally'][(string) $row['status']] = (int) $row['cnt'];
+        }
+
+        return array_map(
+            static fn (array $r): HealthCheckLatestRun => new HealthCheckLatestRun($r['runAt'], $r['trigger'], $r['tally']),
+            $byDomain
+        );
+    }
+
     /** The most recent health check run for a domain, with its items, for the dashboard drill-down (spec §7.2). */
     public function latestForDomain(int $domainId): ?HealthCheckSummary
     {

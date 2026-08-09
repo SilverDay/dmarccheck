@@ -111,6 +111,13 @@ tests/        PHPUnit + fixtures
   results), a sortable/filterable source-IP table, an open-recommendations
   panel, and a raw per-record report-detail view (with an IDOR guard: a
   report_id belonging to a different domain 404s rather than leaking).
+- Overview dashboard landing page (§7.1) — a posture-card grid across all
+  domains (policy, health-check grade, 14-day pass/fail sparkline,
+  open-recommendation counts by severity), an Attention panel (highest-
+  severity open recommendations across all domains), an ingestion-health
+  indicator (last successful ingest, last health check), and a recent-
+  activity feed (domains onboarded, policy changes, newly seen unknown
+  senders).
 - Full domain management (§10.6/§11.1/§15.1), split by role tier. Admin:
   onboarding (runs the full health-check suite synchronously so there's an
   immediate policy baseline before a single report exists), "approve as
