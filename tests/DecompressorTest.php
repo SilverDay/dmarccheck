@@ -22,6 +22,29 @@ final class DecompressorTest extends TestCase
         self::assertSame('<xml/>', $d->decompress('<xml/>'));
     }
 
+    public function testAcceptsPlainJson(): void
+    {
+        $d = new Decompressor(1024 * 1024, 16);
+        self::assertSame('{"a":1}', $d->decompress('{"a":1}'));
+    }
+
+    /** The gzip-inflate path has no XML-specific logic — this locks that in. */
+    public function testInflatesGzipJson(): void
+    {
+        $d = new Decompressor(1024 * 1024, 16);
+        self::assertSame('{"a":1}', $d->decompress((string) gzencode('{"a":1}')));
+    }
+
+    public function testSniffFormatDetectsXmlJsonAndNeither(): void
+    {
+        $d = new Decompressor(1024 * 1024, 16);
+
+        self::assertSame('xml', $d->sniffFormat('<xml/>'));
+        self::assertSame('json', $d->sniffFormat('{"a":1}'));
+        self::assertSame('json', $d->sniffFormat('  [1,2]'));
+        self::assertNull($d->sniffFormat('not a report'));
+    }
+
     public function testRejectsUnknownFormat(): void
     {
         $d = new Decompressor(1024 * 1024, 16);
@@ -47,6 +70,14 @@ final class DecompressorTest extends TestCase
         $zip = $this->buildZip(['report.xml' => '<xml/>']);
 
         self::assertSame('<xml/>', $d->decompress($zip));
+    }
+
+    public function testInflatesZipWithJsonEntry(): void
+    {
+        $d   = new Decompressor(1024 * 1024, 16);
+        $zip = $this->buildZip(['report.json' => '{"a":1}']);
+
+        self::assertSame('{"a":1}', $d->decompress($zip));
     }
 
     /** §4.1 — zip entry count must be capped independently of any size check. */

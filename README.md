@@ -57,7 +57,8 @@ src/          PSR-4 App\ namespace
   Enrichment/ rDNS/ASN lookup, known_senders CIDR matching
   HealthCheck/  Per-check DNS/network probes (SPF, DMARC, DKIM, MX, DNSSEC, STARTTLS, DNSBL, ...)
   Http/       Router, AuthMiddleware, View, SvgBarChart, Controllers/ (incl. per-domain drill-down)
-  Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore
+  Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore,
+              TlsRptParser, ParsedTlsRptReport, TlsRptStore
   Recommendation/  R1-R12 rule engine, AnalysisContextBuilder, reconciliation
   Support/    Ip helpers
 tests/        PHPUnit + fixtures
@@ -79,6 +80,11 @@ tests/        PHPUnit + fixtures
   (domain, reporter, report_id).
 - `bin/ingest.php` — IMAP poll → decompress → parse → archive → store,
   with failed messages quarantined to a separate folder rather than dropped.
+- `TlsRptParser`/`TlsRptStore` — RFC 8460 TLS-RPT JSON report ingestion
+  (§12), sharing `bin/ingest.php`'s mailbox/dedup/archive scaffolding
+  (`Decompressor::sniffFormat()` picks the branch post-decompression).
+  Unlike DMARC XML, one file can name multiple domains (`policies[]`), each
+  stored as its own `tls_rpt_reports`/`tls_rpt_records` row set.
 - `bin/enrich.php` — rDNS + local GeoLite2 ASN lookup + `known_senders`
   CIDR labelling (§6), decoupled from ingestion.
 - `bin/healthcheck.php` — the full §11.2 DNS/network posture checklist

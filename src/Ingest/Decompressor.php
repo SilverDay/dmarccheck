@@ -36,15 +36,27 @@ final class Decompressor
         return match (true) {
             str_starts_with($payload, self::MAGIC_GZIP) => $this->inflateGzip($payload),
             str_starts_with($payload, self::MAGIC_ZIP)  => $this->inflateZip($payload),
-            // Some senders attach plain XML
-            $this->looksLikeXml($payload) => $this->guardSize($payload),
-            default                       => throw new RuntimeException('Unrecognised attachment format'),
+            // Some senders attach plain XML or JSON
+            $this->sniffFormat($payload) !== null => $this->guardSize($payload),
+            default                               => throw new RuntimeException('Unrecognised attachment format'),
         };
     }
 
-    private function looksLikeXml(string $payload): bool
+    /**
+     * Sniffs decompressed/plain content to tell a DMARC XML report from an
+     * RFC 8460 TLS-RPT JSON report — gzip's magic bytes say nothing about
+     * the inner format, so this can only run post-inflation (or on a plain,
+     * uncompressed payload). Never trust the attachment filename/extension.
+     */
+    public function sniffFormat(string $payload): ?string
     {
-        return str_starts_with(ltrim($payload), '<');
+        $trimmed = ltrim($payload);
+
+        return match (true) {
+            str_starts_with($trimmed, '<')                                   => 'xml',
+            str_starts_with($trimmed, '{') || str_starts_with($trimmed, '[') => 'json',
+            default                                                          => null,
+        };
     }
 
     private function guardSize(string $data): string
@@ -138,7 +150,7 @@ final class Decompressor
                     throw new RuntimeException('Zip entry exceeded size cap (possible bomb)');
                 }
 
-                if ($this->looksLikeXml($data)) {
+                if ($this->sniffFormat($data) !== null) {
                     $zip->close();
 
                     return $data;
@@ -146,7 +158,7 @@ final class Decompressor
             }
 
             $zip->close();
-            throw new RuntimeException('No XML entry found in zip');
+            throw new RuntimeException('No parseable report entry found in zip');
         } finally {
             @unlink($tmp);
         }

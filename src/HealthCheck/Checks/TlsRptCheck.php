@@ -7,7 +7,11 @@ namespace App\HealthCheck\Checks;
 use App\HealthCheck\DnsResolver;
 use App\HealthCheck\HealthCheckItemResult;
 
-/** Informational per spec §11.2 — ties into the phase-2 TLS-RPT ingestion, presence-only for now. */
+/**
+ * Informational per spec §11.2 — DNS-presence check only ("is `_smtp._tls`
+ * published"). RFC 8460 report *content* is ingested separately, by
+ * TlsRptParser/TlsRptStore (spec §12).
+ */
 final class TlsRptCheck implements HealthCheck
 {
     public function __construct(private readonly DnsResolver $dns)

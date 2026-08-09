@@ -19,14 +19,18 @@ use App\Ingest\Decompressor;
 use App\Ingest\ReportParser;
 use App\Ingest\ReportStore;
 use App\Ingest\SenderRateLimiter;
+use App\Ingest\TlsRptParser;
+use App\Ingest\TlsRptStore;
 use Webklex\PHPIMAP\Address;
 use Webklex\PHPIMAP\ClientManager;
 use Webklex\PHPIMAP\Message;
 
-$config = Config::load();
-$pdo    = Database::connect($config);
-$store  = new ReportStore($pdo);
-$parser = new ReportParser();
+$config       = Config::load();
+$pdo          = Database::connect($config);
+$store        = new ReportStore($pdo);
+$parser       = new ReportParser();
+$tlsRptParser = new TlsRptParser();
+$tlsRptStore  = new TlsRptStore($pdo);
 
 $decompressor = new Decompressor(
     (int) $config->get('ingest.max_decompressed_bytes', 50 * 1024 * 1024),
@@ -123,15 +127,63 @@ try {
             }
 
             try {
-                $xml  = $decompressor->decompress($payload);
-                $hash = hash('sha256', $xml);
+                $decompressed = $decompressor->decompress($payload);
+                $format       = $decompressor->sniffFormat($decompressed) ?? 'xml';
+                $hash         = hash('sha256', $decompressed);
+
+                if ($format === 'json') {
+                    if ($tlsRptStore->alreadyIngested($hash)) {
+                        $handled = true;
+                        continue;
+                    }
+
+                    $tlsRptReport = $tlsRptParser->parse($decompressed);
+                    $result       = $tlsRptStore->store($tlsRptReport, $hash);
+
+                    foreach ($result->skippedDomains as $skipped) {
+                        fwrite(STDERR, "[skip] tls-rpt report for unmanaged domain: $skipped\n");
+                    }
+
+                    if ($result->storedReportIds === []) {
+                        $hadError = true;
+                        continue;
+                    }
+
+                    // Archive only once at least one policy actually matched
+                    // a managed domain (mirrors DMARC's unmanaged-domain
+                    // report never being archived) — filename from the
+                    // content hash, never from the attacker-supplied
+                    // attachment name.
+                    file_put_contents(
+                        $archivePath . '/' . $hash . '.json.gz',
+                        gzencode($decompressed, 6)
+                    );
+
+                    $stored++;
+                    printf(
+                        "[ok] tls-rpt from %s — %d domain(s), %d polic%s%s\n",
+                        $tlsRptReport->organizationName,
+                        count($result->storedReportIds),
+                        $tlsRptReport->policyCount(),
+                        $tlsRptReport->policyCount() === 1 ? 'y' : 'ies',
+                        $tlsRptReport->warnings      === [] ? '' : ' (' . count($tlsRptReport->warnings) . ' skipped)'
+                    );
+
+                    foreach ($tlsRptReport->warnings as $warning) {
+                        fwrite(STDERR, "[warn] $warning\n");
+                    }
+
+                    $handled = true;
+
+                    continue;
+                }
 
                 if ($store->alreadyIngested($hash)) {
                     $handled = true;
                     continue;
                 }
 
-                $report   = $parser->parse($xml);
+                $report   = $parser->parse($decompressed);
                 $domainId = $store->findDomainId($report->domain);
 
                 if ($domainId === null) {
@@ -144,7 +196,7 @@ try {
                 // hash, never from the attacker-supplied attachment name.
                 file_put_contents(
                     $archivePath . '/' . $hash . '.xml.gz',
-                    gzencode($xml, 6)
+                    gzencode($decompressed, 6)
                 );
 
                 $reportRowId = $store->store($report, $domainId, $hash);
