@@ -151,4 +151,14 @@ return [
         // No key needed; a lookup failure never blocks a password change.
         // 'breach_check_timeout_seconds' => 3,
     ],
+
+    // §13/§14 — retention window before bin/retention.php prunes
+    // report_records/ip_enrichment. Off by default (unset/0 = keep
+    // indefinitely, per §13's original stance) — this is a DPO/operator
+    // policy decision, not a default this tool assumes. Raw archived
+    // XML/JSON under archive/ is never pruned regardless of this setting.
+    // 'retention' => [
+    //     'reports_years'       => 3,
+    //     'ip_enrichment_years' => 3,
+    // ],
 ];

@@ -47,7 +47,7 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 ## Layout
 
 ```
-bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, alert, migrate
+bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, alert, migrate, retention
 config/       config.sample.php → copy to config.php (gitignored)
 db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
 public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js)
@@ -108,6 +108,11 @@ tests/        PHPUnit + fixtures
   when a trigger stops firing (§10.5). Advisory only — never edits DNS.
 - Schema migrations (`bin/migrate.php`, `db/migrations/`) — numbered,
   tracked, never edited in place.
+- `bin/retention.php` — configurable pruning of `report_records`/
+  `ip_enrichment` (§13/§14), **off by default** (a DPO/operator policy
+  decision this tool doesn't assume a window for). `--dry-run` previews
+  counts; a real run is audit-logged. Never touches archived raw
+  XML/JSON, which is retained indefinitely regardless.
 - `bin/alert.php` — daily alerting (§8): heartbeat/dead-man's-switch,
   DNS policy drift vs. the approved baseline, unknown-IP volume spikes,
   and DMARC pass-rate regression, combined into one digest email.
@@ -178,6 +183,9 @@ not just unit tests. Still worth doing before depending on it further:
 0    17 * * 0 php /srv/dmarc/bin/healthcheck.php --trigger=scheduled >> /var/log/dmarc/healthcheck.log 2>&1
 30   4 * * *  php /srv/dmarc/bin/analyze.php >> /var/log/dmarc/analyze.log 2>&1
 15   3 * * *  php /srv/dmarc/bin/alert.php  >> /var/log/dmarc/alert.log  2>&1
+# bin/retention.php is a no-op until retention.*_years is set in config.php
+# (see config.sample.php) — add this entry once you've made that decision:
+0    3 1 * *  php /srv/dmarc/bin/retention.php >> /var/log/dmarc/retention.log 2>&1
 ```
 
 `bin/healthcheck.php` shells out to `dig` — install `dnsutils` (Debian/Ubuntu) if it's not already present.
