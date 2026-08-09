@@ -29,7 +29,19 @@ final class DnsblCheck implements HealthCheck
     /** Spamhaus's documented error/blocked-query sentinel — never a real "listed" answer. */
     private const array ERROR_SENTINELS = ['127.255.255.254', '127.255.255.255'];
 
-    /** @param array<string, string> $zones zone label => DQS zone hostname, e.g. 'zen' => 'zen.dqs.spamhaus.net' */
+    /**
+     * A zone's query shape is inherent to what it is (ZEN lists IPs, DBL
+     * lists domains — spec §11.2's "IP-based DNSBL" vs "domain-based
+     * RHSBL/DBL" distinction), not something a deployment should need to
+     * reconfigure alongside the hostname. Querying a domain-only zone with
+     * a reversed-IP name (or vice versa) isn't a meaningful lookup — it was
+     * happening for every check run before this list existed, producing at
+     * least one confirmed spurious `fail` (an IP queried against DBL).
+     */
+    private const array DOMAIN_ZONE_LABELS = ['dbl'];
+    private const array IP_ZONE_LABELS     = ['zen'];
+
+    /** @param array<string, string> $zones zone label => DQS zone hostname, e.g. 'zen' => 'zen.dq.spamhaus.net' */
     public function __construct(
         private readonly DnsResolver $dns,
         private readonly DigLookup $dig,
@@ -54,7 +66,7 @@ final class DnsblCheck implements HealthCheck
 
         $results = [];
 
-        foreach ($this->zones as $label => $zoneHost) {
+        foreach ($this->zonesFor(self::DOMAIN_ZONE_LABELS) as $label => $zoneHost) {
             $results[] = $this->queryDomain($domain, $label, $zoneHost);
         }
 
@@ -65,12 +77,22 @@ final class DnsblCheck implements HealthCheck
         }
 
         foreach (array_unique($ips) as $ip) {
-            foreach ($this->zones as $label => $zoneHost) {
+            foreach ($this->zonesFor(self::IP_ZONE_LABELS) as $label => $zoneHost) {
                 $results[] = $this->queryIp($ip, $label, $zoneHost);
             }
         }
 
         return $results;
+    }
+
+    /**
+     * @param list<string> $labels
+     *
+     * @return array<string, string>
+     */
+    private function zonesFor(array $labels): array
+    {
+        return array_intersect_key($this->zones, array_flip($labels));
     }
 
     private function queryDomain(string $domain, string $label, string $zoneHost): HealthCheckItemResult
