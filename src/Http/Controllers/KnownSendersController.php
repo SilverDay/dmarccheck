@@ -126,7 +126,7 @@ final class KnownSendersController
             );
         }
 
-        $body = '<div class="page-head"><div><h1>Allowlist</h1>'
+        $body = '<div class="page-head"><div><h1>Allowlist' . View::helpTooltip('page-allowlist', 'What this page is for') . '</h1>'
             . '<div class="sub">' . \count($rules) . ' known-sender rule' . (\count($rules) === 1 ? '' : 's') . ' &middot; admin only</div></div></div>';
 
         if ($error !== null) {
@@ -152,6 +152,8 @@ final class KnownSendersController
             . '<div class="field"><label for="label">Label</label><input type="text" id="label" name="label" placeholder="SMTP relay" required></div>'
             . '<button type="submit" class="btn btn-primary btn-block">Add rule</button>'
             . '</form></div></div>';
+
+        $body .= '<script src="/assets/help.js"></script>';
 
         View::render('Allowlist', $body, $user, $csrf, $flash);
     }

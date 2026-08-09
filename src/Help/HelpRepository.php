@@ -48,6 +48,7 @@ final class HelpRepository
             $dir . 'alerting.php',
             $dir . 'policy.php',
             $dir . 'general.php',
+            $dir . 'pages.php',
         ];
     }
 

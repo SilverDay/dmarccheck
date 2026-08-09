@@ -48,4 +48,20 @@ final class HelpCatalogCompletenessTest extends TestCase
             self::assertNotNull($this->repo->get("alert-{$alert}"), "Missing help article for alert \"{$alert}\"");
         }
     }
+
+    /** Every page-head View::helpTooltip() call site needs a matching article. */
+    public function testEveryPageGuideReferencedFromAControllerHasAnArticle(): void
+    {
+        foreach ([
+            'page-domains',
+            'page-domain-detail',
+            'page-report-detail',
+            'page-allowlist',
+            'page-users',
+            'page-audit-log',
+            'page-security',
+        ] as $page) {
+            self::assertNotNull($this->repo->get($page), "Missing help article for \"{$page}\"");
+        }
+    }
 }

@@ -388,7 +388,7 @@ final class DomainController
                 . '</div>';
         }
 
-        $body = '<div class="page-head"><div><h1>Domains</h1>'
+        $body = '<div class="page-head"><div><h1>Domains' . View::helpTooltip('page-domains', 'What this page shows') . '</h1>'
             . '<div class="sub">' . \count($domains) . ' monitored domain' . (\count($domains) === 1 ? '' : 's') . '</div></div></div>';
 
         if ($error !== null) {
@@ -423,6 +423,8 @@ final class DomainController
                 . '<button type="submit" class="btn btn-primary btn-block">Add domain</button>'
                 . '</form></div></div>';
         }
+
+        $body .= '<script src="/assets/help.js"></script>';
 
         View::render('Domains', $body, $user, $this->auth->csrfToken(), $flash);
     }
@@ -583,11 +585,12 @@ final class DomainController
             return;
         }
 
-        $body = '<div class="page-head"><div><h1>Report detail</h1>'
+        $body = '<div class="page-head"><div><h1>Report detail' . View::helpTooltip('page-report-detail', 'What this page shows') . '</h1>'
             . '<div class="sub"><a href="' . View::e('/domain?' . http_build_query(['domain' => $domain['domain']])) . '">&larr; Back to '
             . View::e((string) $domain['domain']) . '</a></div></div></div>'
             . $this->renderReportMeta($report)
-            . $this->renderRecordDetail($this->fetchReportRecords($reportId));
+            . $this->renderRecordDetail($this->fetchReportRecords($reportId))
+            . '<script src="/assets/help.js"></script>';
 
         View::render('Report detail', $body, $user, $this->auth->csrfToken());
     }
@@ -900,7 +903,7 @@ final class DomainController
                 . '</div>';
         }
 
-        return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . '</h1>'
+        return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . View::helpTooltip('page-domain-detail', 'What this page shows') . '</h1>'
             . '<div class="sub"><a href="/">&larr; All domains</a></div></div></div>'
             . '<div class="overview-grid">'
             . '<div class="overview-col">' . $policyCard . $policyEditCard . '</div>'

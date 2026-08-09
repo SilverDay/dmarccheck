@@ -13,7 +13,7 @@ final class HelpRepositoryTest extends TestCase
     {
         $repo = new HelpRepository(HelpRepository::defaultContentFiles());
 
-        self::assertCount(71, $repo->all());
+        self::assertCount(78, $repo->all());
     }
 
     public function testGetResolvesAKnownSlug(): void

@@ -378,7 +378,7 @@ final class SecurityController
         $stepUpAttr  = $this->stepUp->formAttr($user);
         $stepUpField = $this->stepUp->fieldHtml($user);
 
-        $body = '<div class="page-head"><div><h1>Security settings</h1><div class="sub">' . View::e($user->email) . '</div></div></div>';
+        $body = '<div class="page-head"><div><h1>Security settings' . View::helpTooltip('page-security', 'What this page is for') . '</h1><div class="sub">' . View::e($user->email) . '</div></div></div>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
@@ -452,7 +452,7 @@ final class SecurityController
             . '<p id="webauthn-error-register" class="error"></p>'
             . '</form></div>';
 
-        $body .= '</div><script src="/assets/webauthn.js"></script>';
+        $body .= '</div><script src="/assets/webauthn.js"></script><script src="/assets/help.js"></script>';
 
         View::render('Security settings', $body, $user, $csrf, $flash);
     }

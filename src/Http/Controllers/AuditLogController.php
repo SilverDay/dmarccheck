@@ -52,7 +52,7 @@ final class AuditLogController
             );
         }
 
-        $body = '<div class="page-head"><div><h1>Audit log</h1>'
+        $body = '<div class="page-head"><div><h1>Audit log' . View::helpTooltip('page-audit-log', 'What this page is for') . '</h1>'
             . '<div class="sub">Most recent ' . \count($entries) . ' entr' . (\count($entries) === 1 ? 'y' : 'ies') . ' &middot; super admin only</div></div></div>';
 
         $body .= '<div class="narrow narrow-tight"><form method="get" action="/admin/audit-log" class="inline-form">'
@@ -64,6 +64,8 @@ final class AuditLogController
         $body .= '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
             . '<th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Source IP</th><th>Detail</th>'
             . '</tr></thead><tbody>' . ($rows !== '' ? $rows : '<tr><td colspan="6" class="empty">No matching entries.</td></tr>') . '</tbody></table></div></div>';
+
+        $body .= '<script src="/assets/help.js"></script>';
 
         View::render('Audit log', $body, $user, $this->auth->csrfToken());
     }

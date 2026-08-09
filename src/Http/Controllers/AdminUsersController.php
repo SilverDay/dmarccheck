@@ -314,7 +314,7 @@ final class AdminUsersController
             return $this->userRow($u, $actor, $csrf, $stepUpAttr, $stepUpField);
         }, $users));
 
-        $body = '<div class="page-head"><div><h1>Users</h1>'
+        $body = '<div class="page-head"><div><h1>Users' . View::helpTooltip('page-users', 'What this page is for') . '</h1>'
             . '<div class="sub">' . \count($users) . ' account' . (\count($users) === 1 ? '' : 's') . ' &middot; super admin only</div></div></div>';
 
         if ($error !== null) {
@@ -341,6 +341,8 @@ final class AdminUsersController
         if (!$actor->hasPassword()) {
             $body .= '<script src="/assets/webauthn.js"></script>';
         }
+
+        $body .= '<script src="/assets/help.js"></script>';
 
         View::render('Users', $body, $actor, $csrf, $flash);
     }
