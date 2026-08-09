@@ -8,6 +8,7 @@ use App\Auth\AuditLog;
 use App\Auth\AuthUser;
 use App\Auth\Roles;
 use App\Auth\StepUp;
+use App\Config;
 use App\HealthCheck\HealthCheckItemResult;
 use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
@@ -58,6 +59,7 @@ final class DomainController
         private readonly AuditLog $audit,
         private readonly AuthMiddleware $auth,
         private readonly StepUp $stepUp,
+        private readonly Config $config,
     ) {
     }
 
@@ -884,11 +886,44 @@ final class DomainController
         $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days</h2>'
             . SvgBarChart::render($trend) . '</div>';
 
+        $authRecordCard = '';
+        $authRecord     = self::crossDomainAuthRecord((string) $domain['domain'], (string) $this->config->require('app.mail_from'));
+
+        if ($authRecord !== null) {
+            $authRecordCard = '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+                . '<h2>Cross-domain report authorization</h2>'
+                . '<p class="card-sub">Add this TXT record so receivers accept DMARC reports for this domain (spec §11.2):</p>'
+                . '<code class="rec-evidence">' . View::e($authRecord['name']) . '  IN TXT  &quot;' . View::e($authRecord['value']) . '&quot;</code>'
+                . '</div></div>';
+        }
+
         return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . '</h1>'
             . '<div class="sub"><a href="/">&larr; All domains</a></div></div></div>'
             . '<div class="overview-grid">' . $policyCard . $chartCard . '</div>'
             . $policyEditCard
+            . $authRecordCard
             . $this->renderHealthCheck($health);
+    }
+
+    /**
+     * The exact TXT record an operator adds to the report-*receiving*
+     * domain's DNS to authorize accepting reports for $policyDomain (spec
+     * §11.2) — null when no cross-domain authorization is needed (same
+     * domain, or the mailbox address has no domain part to extract).
+     *
+     * @return array{name: string, value: string}|null
+     */
+    public static function crossDomainAuthRecord(string $policyDomain, string $mailboxAddress): ?array
+    {
+        $policyDomain  = strtolower(trim($policyDomain));
+        $at            = strrpos($mailboxAddress, '@');
+        $mailboxDomain = $at !== false ? strtolower(substr($mailboxAddress, $at + 1)) : '';
+
+        if ($policyDomain === '' || $mailboxDomain === '' || $policyDomain === $mailboxDomain) {
+            return null;
+        }
+
+        return ['name' => $policyDomain . '._report._dmarc.' . $mailboxDomain, 'value' => 'v=DMARC1'];
     }
 
     private function levelOptions(string $selected): string

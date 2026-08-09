@@ -115,6 +115,10 @@ tests/        PHPUnit + fixtures
   results), a sortable/filterable source-IP table, an open-recommendations
   panel, and a raw per-record report-detail view (with an IDOR guard: a
   report_id belonging to a different domain 404s rather than leaking).
+  Also generates the exact `<policy>._report._dmarc.<destination>` TXT
+  record text (§11.2) for domains that report to a different mailbox
+  domain, so it's ready to copy-paste rather than only verified after the
+  fact by the health check.
 - Overview dashboard landing page (§7.1) — a posture-card grid across all
   domains (policy, health-check grade, 14-day pass/fail sparkline,
   open-recommendation counts by severity), an Attention panel (highest-

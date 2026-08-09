@@ -85,4 +85,27 @@ final class DomainControllerTest extends TestCase
     {
         self::assertSame(['variant' => 'success', 'label' => 'Pass'], DomainController::healthGrade(['pass' => 10, 'info' => 2]));
     }
+
+    public function testCrossDomainAuthRecordForADifferentMailboxDomain(): void
+    {
+        self::assertSame(
+            ['name' => 'roya.at._report._dmarc.silverday.de', 'value' => 'v=DMARC1'],
+            DomainController::crossDomainAuthRecord('roya.at', 'dmarc-reports@silverday.de')
+        );
+    }
+
+    public function testCrossDomainAuthRecordIsNullForTheSameDomain(): void
+    {
+        self::assertNull(DomainController::crossDomainAuthRecord('silverday.de', 'dmarc-reports@silverday.de'));
+    }
+
+    public function testCrossDomainAuthRecordIsNullForTheSameDomainCaseInsensitively(): void
+    {
+        self::assertNull(DomainController::crossDomainAuthRecord('SilverDay.de', 'dmarc-reports@silverday.DE'));
+    }
+
+    public function testCrossDomainAuthRecordIsNullForAMailboxAddressWithNoDomain(): void
+    {
+        self::assertNull(DomainController::crossDomainAuthRecord('roya.at', 'not-an-email'));
+    }
 }

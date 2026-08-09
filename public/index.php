@@ -113,6 +113,7 @@ $domainController      = new DomainController(
     $audit,
     $auth,
     $stepUp,
+    $config,
 );
 
 $router = new Router();
