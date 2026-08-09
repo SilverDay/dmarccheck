@@ -18,7 +18,7 @@ final class LoginRateLimiter
     public function __construct(
         private readonly PDO $pdo,
         private readonly int $windowMinutes = 5,
-        private readonly int $maxAttempts   = 5,
+        private readonly int $maxAttempts = 5,
     ) {
     }
 

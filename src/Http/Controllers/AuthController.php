@@ -77,8 +77,8 @@ final class AuthController
         // Rate limit by IP before any DB lookup (F-04). The check is done
         // before findByEmail() so rate-limited responses still consume Argon2id
         // time (via DUMMY_HASH below) to avoid exposing a fast-path.
-        $ip           = $this->clientIp();
-        $rateLimited  = !$this->rateLimiter->check($ip);
+        $ip          = $this->clientIp();
+        $rateLimited = !$this->rateLimiter->check($ip);
 
         $user = $this->users->findByEmail($email);
 
@@ -160,7 +160,7 @@ final class AuthController
             return;
         }
 
-        $ok     = $method === 'totp'
+        $ok = $method === 'totp'
             ? $this->verifyTotpWithReplayProtection($user->id, (string) $user->totpSecretEncrypted, $code)
             : $this->consumeRecoveryCode($user->id, $code);
 
