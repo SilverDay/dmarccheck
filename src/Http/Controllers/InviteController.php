@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Auth\AuditLog;
 use App\Auth\AuthException;
+use App\Auth\HibpBreachedPasswordChecker;
 use App\Auth\InvitationService;
 use App\Auth\PasswordHasher;
 use App\Auth\RecoveryCodes;
@@ -48,6 +49,7 @@ final class InviteController
         private readonly WebauthnCredentialStore $webauthnStore,
         private readonly SealedCookie $sealed,
         private readonly AuditLog $audit,
+        private readonly HibpBreachedPasswordChecker $breachChecker,
     ) {
     }
 
@@ -93,6 +95,12 @@ final class InviteController
                 $invite['email'],
                 sprintf('Password must be %d–%d characters.', PasswordHasher::MIN_LENGTH, PasswordHasher::MAX_LENGTH)
             );
+
+            return;
+        }
+
+        if ($this->breachChecker->isBreached($password)) {
+            $this->renderAcceptForm($token, $invite['email'], 'This password has appeared in a known data breach. Choose a different password.');
 
             return;
         }

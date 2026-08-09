@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Auth\AuditLog;
 use App\Auth\AuthException;
 use App\Auth\AuthUser;
+use App\Auth\HibpBreachedPasswordChecker;
 use App\Auth\PasswordHasher;
 use App\Auth\RecoveryCodes;
 use App\Auth\SealedCookie;
@@ -51,6 +52,7 @@ final class SecurityController
         private readonly StepUp $stepUp,
         private readonly AuditLog $audit,
         private readonly AuthMiddleware $auth,
+        private readonly HibpBreachedPasswordChecker $breachChecker,
     ) {
     }
 
@@ -76,6 +78,12 @@ final class SecurityController
                 PasswordHasher::MIN_LENGTH,
                 PasswordHasher::MAX_LENGTH
             ));
+
+            return;
+        }
+
+        if ($this->breachChecker->isBreached($password)) {
+            $this->renderPage($user, error: 'This password has appeared in a known data breach. Choose a different password.');
 
             return;
         }

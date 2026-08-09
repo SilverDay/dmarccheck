@@ -146,5 +146,9 @@ return [
 
         // §15.2/§15.4 — invite/reset emails, sent via PHP mail() (local MTA)
         'mail_from' => 'dmarc-analyzer@silverday.de',
+
+        // §15.3 — HaveIBeenPwned Pwned Passwords k-anonymity lookup timeout.
+        // No key needed; a lookup failure never blocks a password change.
+        // 'breach_check_timeout_seconds' => 3,
     ],
 ];

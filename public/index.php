@@ -11,6 +11,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Auth\AuditLog;
 use App\Auth\Csrf;
+use App\Auth\HibpBreachedPasswordChecker;
 use App\Auth\InvitationService;
 use App\Auth\LoginRateLimiter;
 use App\Auth\Mailer;
@@ -86,18 +87,19 @@ $webauthnStore = new WebauthnCredentialStore($pdo);
 
 $auth = new AuthMiddleware($sessions, $users, $csrf);
 $rateLimiter = new LoginRateLimiter($pdo);
+$breachChecker = new HibpBreachedPasswordChecker((int) $config->get('app.breach_check_timeout_seconds', 3));
 
 $authController = new AuthController(
     $pdo, $users, $hasher, $totp, $recoveryCodes, $sessions, $webauthn, $webauthnStore, $sealed, $audit, $auth, $rateLimiter,
 );
 $inviteController = new InviteController(
     $pdo, $users, $invitations, $hasher, $totp, $recoveryCodes, $recoveryCodesCount,
-    $sessions, $webauthn, $webauthnStore, $sealed, $audit,
+    $sessions, $webauthn, $webauthnStore, $sealed, $audit, $breachChecker,
 );
-$resetController = new PasswordResetController($resets, $hasher, $mailer, $sessions, $audit, $baseUrl);
+$resetController = new PasswordResetController($resets, $hasher, $mailer, $sessions, $audit, $baseUrl, $breachChecker);
 $securityController = new SecurityController(
     $pdo, $users, $hasher, $totp, $recoveryCodes, $recoveryCodesCount,
-    $sessions, $webauthn, $webauthnStore, $sealed, $stepUp, $audit, $auth,
+    $sessions, $webauthn, $webauthnStore, $sealed, $stepUp, $audit, $auth, $breachChecker,
 );
 $adminController = new AdminUsersController(
     $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,

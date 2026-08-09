@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Auth\AuditLog;
 use App\Auth\AuthException;
+use App\Auth\HibpBreachedPasswordChecker;
 use App\Auth\Mailer;
 use App\Auth\PasswordHasher;
 use App\Auth\PasswordResetService;
@@ -27,6 +28,7 @@ final class PasswordResetController
         private readonly SessionManager $sessions,
         private readonly AuditLog $audit,
         private readonly string $baseUrl,
+        private readonly HibpBreachedPasswordChecker $breachChecker,
     ) {
     }
 
@@ -80,6 +82,12 @@ final class PasswordResetController
                 $token,
                 sprintf('Password must be %d–%d characters.', PasswordHasher::MIN_LENGTH, PasswordHasher::MAX_LENGTH)
             );
+
+            return;
+        }
+
+        if ($this->breachChecker->isBreached($password)) {
+            $this->renderConfirmForm($token, 'This password has appeared in a known data breach. Choose a different password.');
 
             return;
         }
