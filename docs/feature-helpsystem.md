@@ -1,6 +1,6 @@
 # Feature Spec — Contextual Help System ("DMARC 101")
 
-**Status:** Proposed  
+**Status:** Core built 2026-08-09 (see `docs/todo.md` items 4-6 for what's still open: the persistent help panel §4.2, onboarding guided summary §4.5, and search §9). Built: the full 71-article catalog (§5) as `src/Help/content/*.php` + `HelpRepository`, `HelpController`'s public `/help`/`/help/article?slug=` index and article pages, the auth-gated `/help/inline?slug=` tooltip endpoint, and inline `?`-icon tooltips (§4.1/§6.2) wired into the domain drill-down's recommendation rule IDs, health-check badges, and source-table headers. One deviation from this doc: routes use `?slug=` query strings, not `/help/<slug>` path params — this app's `Router` is exact-string-match only (see CLAUDE.md), same reason `/domain` uses `?domain=`.  
 **Relates to:** spec §7 (Dashboard), §9–§11 (findings, recommendations, health checks)
 
 ---
