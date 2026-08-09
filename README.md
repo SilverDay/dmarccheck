@@ -6,8 +6,10 @@ Apache, PDO, front-controller routing, no heavy framework.
 
 > **Status: scaffold, not a finished application.** See *What's implemented*
 > below for an honest split. Ingestion, enrichment, the domain health check,
-> the R1–R12 recommendation engine, and auth/RBAC are built and unit-tested;
-> alerting and most of the dashboard are still stubs.
+> the R1–R12 recommendation engine, alerting, auth/RBAC, and the dashboard
+> (domain list + per-domain drill-down) are built and unit-tested; domain
+> onboarding/policy-approval actions and the community-reporting UI are
+> still stubs.
 
 ---
 
@@ -43,15 +45,16 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 ## Layout
 
 ```
-bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, migrate; alert is a stub
+bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, alert, migrate
 config/       config.sample.php → copy to config.php (gitignored)
 db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
 public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js)
 src/          PSR-4 App\ namespace
+  Alerting/   Heartbeat/policy-drift/volume/pass-rate checks, digest email
   Auth/       Sessions, invitations, passkeys/TOTP, RBAC roles, step-up re-auth
   Enrichment/ rDNS/ASN lookup, known_senders CIDR matching
   HealthCheck/  Per-check DNS/network probes (SPF, DMARC, DKIM, MX, DNSSEC, STARTTLS, DNSBL, ...)
-  Http/       Router, AuthMiddleware, View, Controllers/
+  Http/       Router, AuthMiddleware, View, SvgBarChart, Controllers/ (incl. per-domain drill-down)
   Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore
   Recommendation/  R1-R12 rule engine, AnalysisContextBuilder, reconciliation
   Support/    Ip helpers
@@ -92,14 +95,20 @@ tests/        PHPUnit + fixtures
   when a trigger stops firing (§10.5). Advisory only — never edits DNS.
 - Schema migrations (`bin/migrate.php`, `db/migrations/`) — numbered,
   tracked, never edited in place.
+- `bin/alert.php` — daily alerting (§8): heartbeat/dead-man's-switch,
+  DNS policy drift vs. the approved baseline, unknown-IP volume spikes,
+  and DMARC pass-rate regression, combined into one digest email.
+- Per-domain drill-down dashboard (§7.2) — overview (policy, a
+  dependency-free inline-SVG pass/fail trend chart, latest health-check
+  results), a sortable/filterable source-IP table, an open-recommendations
+  panel, and a raw per-record report-detail view (with an IDOR guard: a
+  report_id belonging to a different domain 404s rather than leaking).
 
 **Stubs / not yet written:**
-- `bin/alert.php` — alerting incl. the heartbeat (§8)
 - §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR
   review that hasn't happened; ships disabled either way
-- Dashboard beyond a domain list with basic stat tiles (§7) — no
-  per-domain drill-down, no recommendations/health-check UI, no domain
-  onboarding flow, no "approve as baseline" policy action
+- Domain onboarding flow, "approve as baseline" policy action — the
+  dashboard has no mutating actions yet, read-only throughout
 
 ---
 

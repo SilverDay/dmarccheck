@@ -63,4 +63,38 @@ final class HealthCheckRepository
         $stmt = $this->pdo->prepare('UPDATE domains SET current_published_policy = ? WHERE id = ?');
         $stmt->execute([$policyString, $domainId]);
     }
+
+    /** The most recent health check run for a domain, with its items, for the dashboard drill-down (spec §7.2). */
+    public function latestForDomain(int $domainId): ?HealthCheckSummary
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, run_at, trigger_ FROM health_checks WHERE domain_id = ? ORDER BY run_at DESC LIMIT 1'
+        );
+        $stmt->execute([$domainId]);
+        $run = $stmt->fetch();
+
+        if ($run === false) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT category, check_name, status, detail_json FROM health_check_items WHERE check_id = ? ORDER BY category, check_name'
+        );
+        $stmt->execute([(int) $run['id']]);
+
+        $items = [];
+
+        foreach ($stmt as $row) {
+            /** @var mixed $detail */
+            $detail  = $row['detail_json'] !== null ? json_decode((string) $row['detail_json'], true) : [];
+            $items[] = new HealthCheckItemResult(
+                (string) $row['category'],
+                (string) $row['check_name'],
+                (string) $row['status'],
+                \is_array($detail) ? $detail : [],
+            );
+        }
+
+        return new HealthCheckSummary((string) $run['run_at'], (string) $run['trigger_'], $items);
+    }
 }

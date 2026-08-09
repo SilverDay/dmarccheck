@@ -26,13 +26,16 @@ use App\Auth\WebauthnCredentialStore;
 use App\Auth\WebauthnService;
 use App\Config;
 use App\Database;
+use App\HealthCheck\HealthCheckRepository;
 use App\Http\AuthMiddleware;
 use App\Http\Controllers\AdminUsersController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DomainController;
 use App\Http\Controllers\InviteController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Router;
+use App\Recommendation\RecommendationRepository;
 
 // Security headers. No inline <script>/<style> is used anywhere (see
 // public/assets/) so the CSP stays strict with no 'unsafe-inline'.
@@ -89,6 +92,9 @@ $securityController = new SecurityController(
 );
 $adminController = new AdminUsersController(
     $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,
+);
+$domainController = new DomainController(
+    $pdo, new RecommendationRepository($pdo), new HealthCheckRepository($pdo), $auth,
 );
 
 $router = new Router();
@@ -181,8 +187,9 @@ $router->get('/', $auth->guard(Roles::READ_ONLY, static function () use ($pdo, $
         };
 
         $rows .= sprintf(
-            '<tr><td class="domain-cell">%s</td><td><span class="policy-pill">%s</span></td>'
+            '<tr><td class="domain-cell"><a href="%s">%s</a></td><td><span class="policy-pill">%s</span></td>'
                 . '<td><span class="policy-pill">%s</span></td><td class="mono">%s</td><td>%s</td></tr>',
+            htmlspecialchars('/domain?' . http_build_query(['domain' => $row['domain']]), ENT_QUOTES),
             htmlspecialchars((string) $row['domain'], ENT_QUOTES),
             htmlspecialchars($published ?? 'not yet observed', ENT_QUOTES),
             htmlspecialchars($target, ENT_QUOTES),
@@ -203,6 +210,10 @@ $router->get('/', $auth->guard(Roles::READ_ONLY, static function () use ($pdo, $
 
     \App\Http\View::render('Domains', $body, $auth->currentUser(), $auth->csrfToken());
 }));
+
+// --- Per-domain drill-down (spec §7.2) --------------------------------------
+$router->get('/domain', $auth->guard(Roles::READ_ONLY, [$domainController, 'show']));
+$router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController, 'reportDetail']));
 
 $router->dispatch(
     $_SERVER['REQUEST_METHOD'] ?? 'GET',

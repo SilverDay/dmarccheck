@@ -1,0 +1,484 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use App\Auth\AuthUser;
+use App\HealthCheck\HealthCheckItemResult;
+use App\HealthCheck\HealthCheckRepository;
+use App\HealthCheck\HealthCheckSummary;
+use App\Http\AuthMiddleware;
+use App\Http\SvgBarChart;
+use App\Http\View;
+use App\Recommendation\RecommendationRepository;
+use App\Recommendation\RecommendationRow;
+use App\Support\Ip;
+use PDO;
+
+/**
+ * Per-domain drill-down (spec §7.2): overview (policy/trend/health-check),
+ * source table, recommendations panel, recent reports, and a raw
+ * per-record report-detail view. Read-only — no forms, no mutations.
+ * Addressed by query string (`?domain=`) rather than a path param, since
+ * `Router` is exact-string-match only.
+ */
+final class DomainController
+{
+    private const int TREND_WINDOW_DAYS   = 30;
+    private const int SOURCE_ROW_LIMIT    = 200;
+    private const int RECENT_REPORT_LIMIT = 20;
+
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly RecommendationRepository $recommendations,
+        private readonly HealthCheckRepository $healthChecks,
+        private readonly AuthMiddleware $auth,
+    ) {
+    }
+
+    public function show(AuthUser $user): void
+    {
+        $domain = $this->findDomain((string) ($_GET['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($user, 'Domain not found.');
+
+            return;
+        }
+
+        $domainId = (int) $domain['id'];
+        $sort     = (string) ($_GET['sort'] ?? 'volume');
+        $label    = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
+
+        $body = $this->renderOverview(
+            $domain,
+            $this->fetchTrendData($domainId),
+            $this->healthChecks->latestForDomain($domainId),
+        )
+            . $this->renderSourceTable($this->fetchSourceRows($domainId, $sort, $label), (string) $domain['domain'], $sort, $label)
+            . $this->renderRecommendations($this->recommendations->forDisplay($domainId))
+            . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain']);
+
+        View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken());
+    }
+
+    public function reportDetail(AuthUser $user): void
+    {
+        $domain = $this->findDomain((string) ($_GET['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($user, 'Domain not found.');
+
+            return;
+        }
+
+        $reportId = (int) ($_GET['report_id'] ?? 0);
+
+        // domain_id is part of the WHERE, not a separate check — a report_id
+        // belonging to a different domain simply won't match (no IDOR).
+        $stmt = $this->pdo->prepare(
+            'SELECT id, reporter_org, report_id, date_begin, date_end FROM reports WHERE id = ? AND domain_id = ?'
+        );
+        $stmt->execute([$reportId, (int) $domain['id']]);
+        $report = $stmt->fetch();
+
+        if ($report === false) {
+            $this->renderNotFound($user, 'Report not found for this domain.');
+
+            return;
+        }
+
+        $body = '<div class="page-head"><div><h1>Report detail</h1>'
+            . '<div class="sub"><a href="' . View::e('/domain?' . http_build_query(['domain' => $domain['domain']])) . '">&larr; Back to '
+            . View::e((string) $domain['domain']) . '</a></div></div></div>'
+            . $this->renderReportMeta($report)
+            . $this->renderRecordDetail($this->fetchReportRecords($reportId));
+
+        View::render('Report detail', $body, $user, $this->auth->csrfToken());
+    }
+
+    /** @return array<string, mixed>|null */
+    private function findDomain(string $domain): ?array
+    {
+        $domain = strtolower(trim($domain));
+
+        if ($domain === '') {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, domain, current_published_policy, approved_baseline_policy, target_policy
+               FROM domains WHERE domain = ? AND active = 1'
+        );
+        $stmt->execute([$domain]);
+        $row = $stmt->fetch();
+
+        return $row === false ? null : $row;
+    }
+
+    private function renderNotFound(AuthUser $user, string $message): void
+    {
+        http_response_code(404);
+        $body = '<div class="page-head"><div><h1>Not found</h1><div class="sub">' . View::e($message) . '</div></div></div>';
+        View::render('Not found', $body, $user, $this->auth->csrfToken());
+    }
+
+    /** @return list<array{day: string, passed: int, failed: int}> */
+    private function fetchTrendData(int $domainId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT DATE(r.date_begin) AS day,
+                    SUM(CASE WHEN rr.dkim_result = 'pass' OR rr.spf_result = 'pass' THEN rr.`count` ELSE 0 END) AS passed,
+                    SUM(CASE WHEN NOT (rr.dkim_result = 'pass' OR rr.spf_result = 'pass') THEN rr.`count` ELSE 0 END) AS failed
+               FROM report_records rr
+               JOIN reports r ON r.id = rr.report_id
+              WHERE r.domain_id = ? AND r.date_begin >= NOW() - INTERVAL " . self::TREND_WINDOW_DAYS . ' DAY
+              GROUP BY DATE(r.date_begin)
+              ORDER BY day'
+        );
+        $stmt->bindValue(1, $domainId, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $days = [];
+
+        foreach ($stmt as $row) {
+            $days[] = ['day' => (string) $row['day'], 'passed' => (int) $row['passed'], 'failed' => (int) $row['failed']];
+        }
+
+        return $days;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchSourceRows(int $domainId, string $sort, ?string $label): array
+    {
+        $orderBy = match ($sort) {
+            'ip'    => 'rr.source_ip ASC',
+            'label' => 'label ASC, volume DESC',
+            'dkim'  => 'dkim_pass DESC',
+            'spf'   => 'spf_pass DESC',
+            default => 'volume DESC',
+        };
+
+        $sql = "SELECT rr.source_ip AS source_ip, ie.rdns AS rdns, ie.asn_org AS asn_org,
+                       COALESCE(ie.label, 'pending') AS label,
+                       SUM(rr.`count`) AS volume,
+                       SUM(CASE WHEN rr.dkim_result = 'pass' THEN rr.`count` ELSE 0 END) AS dkim_pass,
+                       SUM(CASE WHEN rr.spf_result = 'pass' THEN rr.`count` ELSE 0 END) AS spf_pass
+                  FROM report_records rr
+                  JOIN reports r ON r.id = rr.report_id
+                  LEFT JOIN ip_enrichment ie ON ie.source_ip = rr.source_ip
+                 WHERE r.domain_id = ? AND r.date_begin >= NOW() - INTERVAL " . self::TREND_WINDOW_DAYS . ' DAY';
+
+        $params = [$domainId];
+
+        if ($label !== null) {
+            $sql .= " AND COALESCE(ie.label, 'pending') = ?";
+            $params[] = $label;
+        }
+
+        $sql .= ' GROUP BY rr.source_ip, ie.rdns, ie.asn_org, ie.label ORDER BY ' . $orderBy . ' LIMIT ' . self::SOURCE_ROW_LIMIT;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$row) {
+            $row['ip'] = Ip::toString((string) $row['source_ip']);
+        }
+
+        unset($row);
+
+        return $rows;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchRecentReports(int $domainId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT r.id, r.reporter_org, r.date_begin, r.date_end,
+                    (SELECT COUNT(*) FROM report_records rr WHERE rr.report_id = r.id) AS record_count
+               FROM reports r
+              WHERE r.domain_id = ?
+              ORDER BY r.date_begin DESC
+              LIMIT ' . self::RECENT_REPORT_LIMIT
+        );
+        $stmt->execute([$domainId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchReportRecords(int $reportId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, source_ip, `count`, disposition, dkim_result, spf_result, header_from
+               FROM report_records WHERE report_id = ? ORDER BY `count` DESC'
+        );
+        $stmt->execute([$reportId]);
+        $records = $stmt->fetchAll();
+
+        if ($records === []) {
+            return [];
+        }
+
+        $recordIds    = array_map(static fn (array $r): int => (int) $r['id'], $records);
+        $placeholders = implode(',', array_fill(0, \count($recordIds), '?'));
+        $stmt         = $this->pdo->prepare("SELECT record_id, type, domain, selector, result FROM auth_results WHERE record_id IN ($placeholders)");
+        $stmt->execute($recordIds);
+
+        $authByRecord = [];
+
+        foreach ($stmt as $row) {
+            $authByRecord[(int) $row['record_id']][] = $row;
+        }
+
+        foreach ($records as &$r) {
+            $r['source_ip']    = Ip::toString((string) $r['source_ip']);
+            $r['auth_results'] = $authByRecord[(int) $r['id']] ?? [];
+        }
+
+        unset($r);
+
+        return $records;
+    }
+
+    /**
+     * @param array<string, mixed> $domain
+     * @param list<array{day: string, passed: int, failed: int}> $trend
+     */
+    private function renderOverview(array $domain, array $trend, ?HealthCheckSummary $health): string
+    {
+        $current  = $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : 'not yet observed';
+        $baseline = $domain['approved_baseline_policy'] !== null ? (string) $domain['approved_baseline_policy'] : 'none approved';
+        $target   = (string) $domain['target_policy'];
+
+        $policyCard = '<div class="card"><h2>Policy</h2>'
+            . '<div class="policy-row"><span class="policy-label">Published</span><span class="policy-pill">' . View::e($current) . '</span></div>'
+            . '<div class="policy-row"><span class="policy-label">Approved baseline</span><span class="policy-pill">' . View::e($baseline) . '</span></div>'
+            . '<div class="policy-row"><span class="policy-label">Target</span><span class="policy-pill">' . View::e($target) . '</span></div>'
+            . '</div>';
+
+        $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days</h2>'
+            . SvgBarChart::render($trend) . '</div>';
+
+        return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . '</h1>'
+            . '<div class="sub"><a href="/">&larr; All domains</a></div></div></div>'
+            . '<div class="overview-grid">' . $policyCard . $chartCard . '</div>'
+            . $this->renderHealthCheck($health);
+    }
+
+    private function renderHealthCheck(?HealthCheckSummary $health): string
+    {
+        if ($health === null) {
+            return '<div class="section-head"><h2>Health check</h2></div><p class="card-sub">No health check has been run yet.</p>';
+        }
+
+        $items = '';
+
+        foreach ($health->items as $item) {
+            $items .= '<div class="health-item">'
+                . View::badge($this->healthStatusVariant($item->status), $item->checkName)
+                . '<span class="health-category">' . View::e($item->category) . '</span>'
+                . '</div>';
+        }
+
+        return '<div class="section-head"><h2>Health check</h2>'
+            . '<span class="sub">Last run ' . View::e($health->runAt) . ' (' . View::e($health->trigger) . ')</span></div>'
+            . '<div class="health-grid">' . $items . '</div>';
+    }
+
+    private function healthStatusVariant(string $status): string
+    {
+        return match ($status) {
+            HealthCheckItemResult::PASS => 'success',
+            HealthCheckItemResult::WARN => 'warning',
+            HealthCheckItemResult::FAIL => 'danger',
+            // info, error — error must never render as a pass (spec §11.3)
+            default => 'neutral',
+        };
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    private function renderSourceTable(array $rows, string $domain, string $sort, ?string $label): string
+    {
+        $sortLink = static function (string $key, string $text) use ($domain, $sort, $label): string {
+            $params          = ['domain' => $domain, 'sort' => $key];
+            $params['label'] = $label ?? '';
+            $active          = $sort === $key ? ' class="active"' : '';
+
+            return '<a href="/domain?' . http_build_query($params) . '"' . $active . '>' . View::e($text) . '</a>';
+        };
+
+        $labels = array_values(array_unique(array_map(static fn (array $r): string => (string) $r['label'], $rows)));
+        sort($labels);
+
+        $filterLinks = '<a href="/domain?' . http_build_query(['domain' => $domain, 'sort' => $sort]) . '"'
+            . ($label === null ? ' class="active"' : '') . '>All</a>';
+
+        foreach ($labels as $l) {
+            $active = $label === $l ? ' class="active"' : '';
+            $filterLinks .= ' <a href="/domain?' . http_build_query(['domain' => $domain, 'sort' => $sort, 'label' => $l]) . '"' . $active . '>' . View::e($l) . '</a>';
+        }
+
+        $tr = '';
+
+        foreach ($rows as $r) {
+            $volume  = (int) $r['volume'];
+            $dkimPct = $volume > 0 ? (int) round(((int) $r['dkim_pass']) / $volume * 100) : 0;
+            $spfPct  = $volume > 0 ? (int) round(((int) $r['spf_pass']) / $volume * 100) : 0;
+
+            $tr .= sprintf(
+                '<tr><td class="mono">%s</td><td>%s</td><td>%s</td><td>%s</td>'
+                    . '<td class="mono" style="text-align:right;">%d</td>'
+                    . '<td style="text-align:right;">%d%%</td><td style="text-align:right;">%d%%</td></tr>',
+                View::e((string) $r['ip']),
+                View::e($r['rdns'] !== null ? (string) $r['rdns'] : '—'),
+                View::e($r['asn_org'] !== null ? (string) $r['asn_org'] : '—'),
+                View::badge($this->labelVariant((string) $r['label']), (string) $r['label']),
+                $volume,
+                $dkimPct,
+                $spfPct,
+            );
+        }
+
+        return '<div class="section-head"><h2>Sources</h2><div class="table-filters">' . $filterLinks . '</div></div>'
+            . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+            . '<th>' . $sortLink('ip', 'IP') . '</th><th>rDNS</th><th>ASN org</th><th>' . $sortLink('label', 'Label') . '</th>'
+            . '<th>' . $sortLink('volume', 'Volume') . '</th><th>' . $sortLink('dkim', 'DKIM pass') . '</th><th>' . $sortLink('spf', 'SPF pass') . '</th>'
+            . '</tr></thead><tbody>' . ($tr !== '' ? $tr : '<tr><td colspan="7" class="empty">No sources in the last ' . self::TREND_WINDOW_DAYS . ' days.</td></tr>') . '</tbody></table></div></div>';
+    }
+
+    private function labelVariant(string $label): string
+    {
+        return match ($label) {
+            'unknown' => 'unknown',
+            'pending' => 'neutral',
+            default   => 'success', // any known_senders/ESP label
+        };
+    }
+
+    /** @param list<RecommendationRow> $rows */
+    private function renderRecommendations(array $rows): string
+    {
+        if ($rows === []) {
+            return '<div class="section-head"><h2>Recommendations</h2></div><p class="card-sub">No open recommendations.</p>';
+        }
+
+        $items = '';
+
+        foreach ($rows as $row) {
+            $subject  = $row->subject !== null ? ' &middot; <span class="mono">' . View::e($row->subject) . '</span>' : '';
+            $evidence = View::e(json_encode($row->evidence, JSON_THROW_ON_ERROR));
+
+            $items .= '<div class="rec-item">'
+                . View::badge($this->severityVariant($row->severity), strtoupper($row->severity))
+                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>' . $subject
+                . '<span class="rec-meta">first seen ' . View::e($row->firstSeen) . ' &middot; last seen ' . View::e($row->lastSeen) . '</span>'
+                . '<code class="rec-evidence">' . $evidence . '</code>'
+                . '</div>';
+        }
+
+        return '<div class="section-head"><h2>Recommendations</h2></div><div class="rec-list">' . $items . '</div>';
+    }
+
+    private function severityVariant(string $severity): string
+    {
+        return match ($severity) {
+            'high'   => 'danger',
+            'medium' => 'warning',
+            default  => 'neutral', // low, info
+        };
+    }
+
+    /** @param list<array<string, mixed>> $reports */
+    private function renderReportsList(array $reports, string $domain): string
+    {
+        $rows = '';
+
+        foreach ($reports as $r) {
+            $rows .= sprintf(
+                '<tr><td>%s</td><td class="mono">%s</td><td class="mono">%s</td><td style="text-align:right;">%d</td><td><a href="%s">View</a></td></tr>',
+                View::e((string) $r['reporter_org']),
+                View::e((string) $r['date_begin']),
+                View::e((string) $r['date_end']),
+                (int) $r['record_count'],
+                View::e('/domain/report?' . http_build_query(['domain' => $domain, 'report_id' => $r['id']])),
+            );
+        }
+
+        return '<div class="section-head"><h2>Recent reports</h2></div>'
+            . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+            . '<th>Reporter</th><th>Period start</th><th>Period end</th><th>Records</th><th></th>'
+            . '</tr></thead><tbody>' . ($rows !== '' ? $rows : '<tr><td colspan="5" class="empty">No reports yet.</td></tr>') . '</tbody></table></div></div>';
+    }
+
+    /** @param array<string, mixed> $report */
+    private function renderReportMeta(array $report): string
+    {
+        return '<div class="stats">'
+            . $this->statTile('Reporter', (string) $report['reporter_org'])
+            . $this->statTile('Report ID', (string) $report['report_id'])
+            . $this->statTile('Period start', (string) $report['date_begin'])
+            . $this->statTile('Period end', (string) $report['date_end'])
+            . '</div>';
+    }
+
+    private function statTile(string $label, string $value): string
+    {
+        return '<div class="stat-tile"><div class="label">' . View::e($label) . '</div>'
+            . '<div class="value mono" style="font-size:14px;">' . View::e($value) . '</div></div>';
+    }
+
+    /** @param list<array<string, mixed>> $records */
+    private function renderRecordDetail(array $records): string
+    {
+        if ($records === []) {
+            return '<p class="card-sub">No records in this report.</p>';
+        }
+
+        $rows = '';
+
+        foreach ($records as $r) {
+            $authRows = '';
+
+            /** @var list<array<string, mixed>> $authResults */
+            $authResults = $r['auth_results'];
+
+            foreach ($authResults as $a) {
+                $authRows .= sprintf(
+                    '<div class="auth-row"><span class="mono">%s</span> domain=<span class="mono">%s</span> selector=<span class="mono">%s</span> result=<span class="mono">%s</span></div>',
+                    View::e((string) $a['type']),
+                    View::e($a['domain'] !== null ? (string) $a['domain'] : '—'),
+                    View::e($a['selector'] !== null ? (string) $a['selector'] : '—'),
+                    View::e($a['result'] !== null ? (string) $a['result'] : '—'),
+                );
+            }
+
+            $rows .= sprintf(
+                '<tr><td class="mono">%s</td><td style="text-align:right;">%d</td><td>%s</td><td>%s</td><td>%s</td><td class="mono">%s</td></tr>'
+                    . '<tr class="auth-details"><td colspan="6">%s</td></tr>',
+                View::e((string) $r['source_ip']),
+                (int) $r['count'],
+                View::badge($this->dispositionVariant((string) $r['disposition']), (string) $r['disposition']),
+                View::badge($r['dkim_result'] === 'pass' ? 'success' : 'danger', (string) $r['dkim_result']),
+                View::badge($r['spf_result'] === 'pass' ? 'success' : 'danger', (string) $r['spf_result']),
+                View::e($r['header_from'] !== null ? (string) $r['header_from'] : '—'),
+                $authRows !== '' ? $authRows : '<span class="card-sub">No raw auth_results recorded.</span>',
+            );
+        }
+
+        return '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+            . '<th>Source IP</th><th>Count</th><th>Disposition</th><th>DKIM</th><th>SPF</th><th>Header From</th>'
+            . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+    }
+
+    private function dispositionVariant(string $disposition): string
+    {
+        return match ($disposition) {
+            'reject'     => 'danger',
+            'quarantine' => 'warning',
+            default      => 'success', // none
+        };
+    }
+}

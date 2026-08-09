@@ -26,6 +26,46 @@ final class RecommendationRepository
     }
 
     /**
+     * Full row data for the dashboard drill-down (spec §7.2) —
+     * openAndAcknowledged() only carries reconciliation identity.
+     *
+     * @return list<RecommendationRow>
+     */
+    public function forDisplay(int $domainId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT id, rule_id, severity, evidence_json, first_seen, last_seen, state
+               FROM recommendations
+              WHERE domain_id = ? AND state IN ('open', 'acknowledged')
+              ORDER BY FIELD(severity, 'high', 'medium', 'low', 'info'), last_seen DESC"
+        );
+        $stmt->execute([$domainId]);
+
+        $rows = [];
+
+        foreach ($stmt as $row) {
+            /** @var mixed $evidence */
+            $evidence = $row['evidence_json'] !== null ? json_decode((string) $row['evidence_json'], true) : [];
+            $evidence = \is_array($evidence) ? $evidence : [];
+            $subject  = $evidence['_subject'] ?? null;
+            unset($evidence['_subject']);
+
+            $rows[] = new RecommendationRow(
+                (int) $row['id'],
+                (string) $row['rule_id'],
+                (string) $row['severity'],
+                \is_string($subject) ? $subject : null,
+                $evidence,
+                (string) $row['first_seen'],
+                (string) $row['last_seen'],
+                (string) $row['state'],
+            );
+        }
+
+        return $rows;
+    }
+
+    /**
      * A still-firing suppressed finding must not be silently re-inserted
      * as a fresh row — that would defeat "stop showing."
      *
