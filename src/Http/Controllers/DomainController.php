@@ -4,23 +4,32 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Auth\AuditLog;
 use App\Auth\AuthUser;
+use App\Auth\Roles;
 use App\HealthCheck\HealthCheckItemResult;
 use App\HealthCheck\HealthCheckRepository;
+use App\HealthCheck\HealthCheckRunnerFactory;
 use App\HealthCheck\HealthCheckSummary;
 use App\Http\AuthMiddleware;
 use App\Http\SvgBarChart;
 use App\Http\View;
 use App\Recommendation\RecommendationRepository;
 use App\Recommendation\RecommendationRow;
+use App\Support\DomainName;
 use App\Support\Ip;
 use PDO;
 
 /**
- * Per-domain drill-down (spec §7.2): overview (policy/trend/health-check),
- * source table, recommendations panel, recent reports, and a raw
- * per-record report-detail view. Read-only — no forms, no mutations.
- * Addressed by query string (`?domain=`) rather than a path param, since
+ * Domain list (spec §7.1) and per-domain drill-down (spec §7.2): overview
+ * (policy/trend/health-check), source table, recommendations panel, recent
+ * reports, a raw per-record report-detail view, and the two Admin-tier
+ * mutating actions (spec §15.1: onboard/configure is an Admin capability,
+ * not Super Admin — that tier is reserved for user management) — adding a
+ * domain (§11.1: runs a health check synchronously so there's an immediate
+ * baseline) and approving a domain's current policy as the R9/alerting
+ * drift baseline (§10.6: never silent/automatic). The drill-down is
+ * addressed by query string (`?domain=`) rather than a path param, since
  * `Router` is exact-string-match only.
  */
 final class DomainController
@@ -33,8 +42,186 @@ final class DomainController
         private readonly PDO $pdo,
         private readonly RecommendationRepository $recommendations,
         private readonly HealthCheckRepository $healthChecks,
+        private readonly HealthCheckRunnerFactory $healthCheckFactory,
+        private readonly AuditLog $audit,
         private readonly AuthMiddleware $auth,
     ) {
+    }
+
+    public function index(AuthUser $user): void
+    {
+        $this->renderIndex($user);
+    }
+
+    public function add(AuthUser $actor): void
+    {
+        $domain = strtolower(trim((string) ($_POST['domain'] ?? '')));
+
+        if (!DomainName::isValid($domain)) {
+            $this->renderIndex($actor, error: 'Enter a valid domain name (e.g. example.com).');
+
+            return;
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id FROM domains WHERE domain = ?');
+        $stmt->execute([$domain]);
+
+        if ($stmt->fetch() !== false) {
+            $this->renderIndex($actor, error: "\"$domain\" is already onboarded.");
+
+            return;
+        }
+
+        $this->pdo->prepare('INSERT INTO domains (domain) VALUES (?)')->execute([$domain]);
+        $domainId = (int) $this->pdo->lastInsertId();
+
+        // Onboarding is a rare, deliberate admin action, not a hot path —
+        // run the full check suite synchronously so there's an immediate
+        // baseline (spec §11.1), rather than waiting for the next
+        // scheduled/manual bin/healthcheck.php pass. 12 checks each
+        // individually bounded by healthcheck.*_timeout_seconds can still
+        // exceed a typical 30s request limit in the worst case.
+        set_time_limit(120);
+
+        $tally = ['pass' => 0, 'warn' => 0, 'fail' => 0, 'info' => 0, 'error' => 0];
+
+        try {
+            $items = $this->healthCheckFactory->forDomain($domainId)->run($domainId, $domain, 'onboarding');
+
+            foreach ($items as $item) {
+                $tally[$item->status] = ($tally[$item->status] ?? 0) + 1;
+            }
+        } catch (\Throwable) {
+            // HealthCheckRunner already turns individual check failures into
+            // 'error' items rather than throwing; a throw here would mean
+            // something more fundamental broke. Onboarding still succeeded
+            // (the domain row exists) — just note no health check ran yet.
+        }
+
+        $this->audit->record($actor->id, 'domain.onboarded', $domain, $tally, $this->clientIp());
+
+        header('Location: /domain?' . http_build_query(['domain' => $domain]));
+    }
+
+    public function approveBaseline(AuthUser $actor): void
+    {
+        $domain = $this->findDomain((string) ($_POST['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($actor, 'Domain not found.');
+
+            return;
+        }
+
+        $policy = self::approvableBaseline(
+            $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : null
+        );
+
+        if ($policy === null) {
+            $this->renderDrillDown($actor, $domain, error: 'No published policy has been observed yet — run a health check first.');
+
+            return;
+        }
+
+        $this->pdo->prepare('UPDATE domains SET approved_baseline_policy = ? WHERE id = ?')
+            ->execute([$policy, (int) $domain['id']]);
+
+        $this->audit->record($actor->id, 'domain.baseline_approved', (string) $domain['domain'], ['policy' => $policy], $this->clientIp());
+
+        $domain['approved_baseline_policy'] = $policy;
+        $this->renderDrillDown($actor, $domain, flash: "Approved \"$policy\" as the baseline.");
+    }
+
+    /**
+     * The one decision in approveBaseline(): a baseline is only approvable
+     * once a published policy has actually been observed — spec §10.6
+     * forbids ever seeding it silently/automatically.
+     */
+    public static function approvableBaseline(?string $currentPublishedPolicy): ?string
+    {
+        return $currentPublishedPolicy;
+    }
+
+    private function clientIp(): ?string
+    {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+
+        return \is_string($ip) && $ip !== '' ? $ip : null;
+    }
+
+    /** spec §7.1 — the domain-list landing page. */
+    private function renderIndex(AuthUser $user, ?string $flash = null, ?string $error = null): void
+    {
+        $domains = $this->pdo->query(
+            'SELECT d.domain,
+                    d.current_published_policy,
+                    d.target_policy,
+                    (SELECT MAX(received_at) FROM reports r WHERE r.domain_id = d.id) AS last_report
+               FROM domains d
+              WHERE d.active = 1
+              ORDER BY d.domain'
+        )->fetchAll();
+
+        $reportsLast7d = (int) $this->pdo->query(
+            'SELECT COUNT(*) FROM reports WHERE received_at >= NOW() - INTERVAL 7 DAY'
+        )->fetchColumn();
+
+        // A domain-level "reached its own target yet" indicator derived straight
+        // from the two policy columns already on the row — not a recommendation
+        // (that's spec §10, a separate signal), just reflects what's here.
+        $normalize = static fn (string $policy): string => strtolower(preg_replace('/\s+/', '', $policy) ?? '');
+
+        $rows = '';
+
+        foreach ($domains as $row) {
+            $published  = $row['current_published_policy'] !== null ? (string) $row['current_published_policy'] : null;
+            $target     = (string) $row['target_policy'];
+            $lastReport = $row['last_report'] !== null ? (string) $row['last_report'] : null;
+
+            $status = match (true) {
+                $lastReport                                   === null                => View::badge('neutral', 'Onboarding'),
+                $published !== null && $normalize($published) === $normalize($target) => View::badge('success', 'At target'),
+                default                                                               => View::badge('warning', 'Advancing'),
+            };
+
+            $rows .= sprintf(
+                '<tr><td class="domain-cell"><a href="%s">%s</a></td><td><span class="policy-pill">%s</span></td>'
+                    . '<td><span class="policy-pill">%s</span></td><td class="mono">%s</td><td>%s</td></tr>',
+                View::e('/domain?' . http_build_query(['domain' => $row['domain']])),
+                View::e((string) $row['domain']),
+                View::e($published ?? 'not yet observed'),
+                View::e($target),
+                View::e($lastReport ?? 'never'),
+                $status
+            );
+        }
+
+        $body = '<div class="page-head"><div><h1>Domains</h1>'
+            . '<div class="sub">' . \count($domains) . ' monitored domain' . (\count($domains) === 1 ? '' : 's') . '</div></div></div>';
+
+        if ($error !== null) {
+            $body .= '<p class="error">' . View::e($error) . '</p>';
+        }
+
+        $body .= '<div class="stats">'
+            . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
+            . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
+            . '</div>'
+            . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
+            . '<th>Domain</th><th>Published policy</th><th>Target policy</th><th>Last report</th><th>Status</th>'
+            . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+
+        if (Roles::atLeast($user->role, Roles::ADMIN)) {
+            $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+                . '<h2>Add domain</h2>'
+                . '<form method="post" action="/domains/add">'
+                . View::csrfField($this->auth->csrfToken())
+                . '<div class="field"><label for="domain">Domain</label><input type="text" id="domain" name="domain" placeholder="example.com" required></div>'
+                . '<button type="submit" class="btn btn-primary btn-block">Add domain</button>'
+                . '</form></div></div>';
+        }
+
+        View::render('Domains', $body, $user, $this->auth->csrfToken(), $flash);
     }
 
     public function show(AuthUser $user): void
@@ -47,20 +234,28 @@ final class DomainController
             return;
         }
 
+        $this->renderDrillDown($user, $domain);
+    }
+
+    /** @param array<string, mixed> $domain */
+    private function renderDrillDown(AuthUser $user, array $domain, ?string $flash = null, ?string $error = null): void
+    {
         $domainId = (int) $domain['id'];
         $sort     = (string) ($_GET['sort'] ?? 'volume');
         $label    = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
 
-        $body = $this->renderOverview(
-            $domain,
-            $this->fetchTrendData($domainId),
-            $this->healthChecks->latestForDomain($domainId),
-        )
+        $body = ($error !== null ? '<p class="error">' . View::e($error) . '</p>' : '')
+            . $this->renderOverview(
+                $user,
+                $domain,
+                $this->fetchTrendData($domainId),
+                $this->healthChecks->latestForDomain($domainId),
+            )
             . $this->renderSourceTable($this->fetchSourceRows($domainId, $sort, $label), (string) $domain['domain'], $sort, $label)
             . $this->renderRecommendations($this->recommendations->forDisplay($domainId))
             . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain']);
 
-        View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken());
+        View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken(), $flash);
     }
 
     public function reportDetail(AuthUser $user): void
@@ -247,14 +442,24 @@ final class DomainController
      * @param array<string, mixed> $domain
      * @param list<array{day: string, passed: int, failed: int}> $trend
      */
-    private function renderOverview(array $domain, array $trend, ?HealthCheckSummary $health): string
+    private function renderOverview(AuthUser $user, array $domain, array $trend, ?HealthCheckSummary $health): string
     {
         $current  = $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : 'not yet observed';
         $baseline = $domain['approved_baseline_policy'] !== null ? (string) $domain['approved_baseline_policy'] : 'none approved';
         $target   = (string) $domain['target_policy'];
 
+        $approveForm = '';
+
+        if ($domain['current_published_policy'] !== null && Roles::atLeast($user->role, Roles::ADMIN)) {
+            $approveForm = '<form method="post" action="/domain/approve-baseline" class="inline-form">'
+                . View::csrfField($this->auth->csrfToken())
+                . '<input type="hidden" name="domain" value="' . View::e((string) $domain['domain']) . '">'
+                . '<button type="submit" class="btn btn-secondary btn-sm">Approve as baseline</button>'
+                . '</form>';
+        }
+
         $policyCard = '<div class="card"><h2>Policy</h2>'
-            . '<div class="policy-row"><span class="policy-label">Published</span><span class="policy-pill">' . View::e($current) . '</span></div>'
+            . '<div class="policy-row"><span class="policy-label">Published</span><span class="policy-pill">' . View::e($current) . '</span>' . $approveForm . '</div>'
             . '<div class="policy-row"><span class="policy-label">Approved baseline</span><span class="policy-pill">' . View::e($baseline) . '</span></div>'
             . '<div class="policy-row"><span class="policy-label">Target</span><span class="policy-pill">' . View::e($target) . '</span></div>'
             . '</div>';

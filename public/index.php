@@ -27,6 +27,7 @@ use App\Auth\WebauthnService;
 use App\Config;
 use App\Database;
 use App\HealthCheck\HealthCheckRepository;
+use App\HealthCheck\HealthCheckRunnerFactory;
 use App\Http\AuthMiddleware;
 use App\Http\Controllers\AdminUsersController;
 use App\Http\Controllers\AuthController;
@@ -93,8 +94,14 @@ $securityController = new SecurityController(
 $adminController = new AdminUsersController(
     $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,
 );
-$domainController = new DomainController(
-    $pdo, new RecommendationRepository($pdo), new HealthCheckRepository($pdo), $auth,
+$healthCheckRepository = new HealthCheckRepository($pdo);
+$domainController      = new DomainController(
+    $pdo,
+    new RecommendationRepository($pdo),
+    $healthCheckRepository,
+    new HealthCheckRunnerFactory($config, $healthCheckRepository),
+    $audit,
+    $auth,
 );
 
 $router = new Router();
@@ -152,68 +159,14 @@ $router->post('/admin/users/password-reset', $auth->guardPost(Roles::SUPER_ADMIN
 $router->post('/admin/users/reset-mfa', $auth->guardPost(Roles::SUPER_ADMIN, [$adminController, 'resetMfa']));
 $router->post('/admin/users/revoke-sessions', $auth->guardPost(Roles::SUPER_ADMIN, [$adminController, 'revokeSessions']));
 
-// --- Dashboard (spec §7.1/§7.3 — every view requires at least read-only) ---
-$router->get('/', $auth->guard(Roles::READ_ONLY, static function () use ($pdo, $auth): void {
-    $domains = $pdo->query(
-        'SELECT d.domain,
-                d.current_published_policy,
-                d.target_policy,
-                (SELECT MAX(received_at) FROM reports r WHERE r.domain_id = d.id) AS last_report
-           FROM domains d
-          WHERE d.active = 1
-          ORDER BY d.domain'
-    )->fetchAll();
-
-    $reportsLast7d = (int) $pdo->query(
-        'SELECT COUNT(*) FROM reports WHERE received_at >= NOW() - INTERVAL 7 DAY'
-    )->fetchColumn();
-
-    // A domain-level "reached its own target yet" indicator derived straight
-    // from the two policy columns already on the row — not a recommendation
-    // (that engine, spec §10, isn't built yet), just reflects what's here.
-    $normalize = static fn (string $policy): string => strtolower(preg_replace('/\s+/', '', $policy) ?? '');
-
-    $rows = '';
-
-    foreach ($domains as $row) {
-        $published = $row['current_published_policy'] !== null ? (string) $row['current_published_policy'] : null;
-        $target = (string) $row['target_policy'];
-        $lastReport = $row['last_report'] !== null ? (string) $row['last_report'] : null;
-
-        $status = match (true) {
-            $lastReport === null => \App\Http\View::badge('neutral', 'Onboarding'),
-            $published !== null && $normalize($published) === $normalize($target) => \App\Http\View::badge('success', 'At target'),
-            default => \App\Http\View::badge('warning', 'Advancing'),
-        };
-
-        $rows .= sprintf(
-            '<tr><td class="domain-cell"><a href="%s">%s</a></td><td><span class="policy-pill">%s</span></td>'
-                . '<td><span class="policy-pill">%s</span></td><td class="mono">%s</td><td>%s</td></tr>',
-            htmlspecialchars('/domain?' . http_build_query(['domain' => $row['domain']]), ENT_QUOTES),
-            htmlspecialchars((string) $row['domain'], ENT_QUOTES),
-            htmlspecialchars($published ?? 'not yet observed', ENT_QUOTES),
-            htmlspecialchars($target, ENT_QUOTES),
-            htmlspecialchars($lastReport ?? 'never', ENT_QUOTES),
-            $status
-        );
-    }
-
-    $body = '<div class="page-head"><div><h1>Domains</h1>'
-        . '<div class="sub">' . \count($domains) . ' monitored domain' . (\count($domains) === 1 ? '' : 's') . '</div></div></div>'
-        . '<div class="stats">'
-        . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
-        . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
-        . '</div>'
-        . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
-        . '<th>Domain</th><th>Published policy</th><th>Target policy</th><th>Last report</th><th>Status</th>'
-        . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
-
-    \App\Http\View::render('Domains', $body, $auth->currentUser(), $auth->csrfToken());
-}));
-
-// --- Per-domain drill-down (spec §7.2) --------------------------------------
+// --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
+$router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));
 $router->get('/domain', $auth->guard(Roles::READ_ONLY, [$domainController, 'show']));
 $router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController, 'reportDetail']));
+
+// --- Domain onboarding / baseline approval (spec §10.6/§11.1 — Admin tier) ---
+$router->post('/domains/add', $auth->guardPost(Roles::ADMIN, [$domainController, 'add']));
+$router->post('/domain/approve-baseline', $auth->guardPost(Roles::ADMIN, [$domainController, 'approveBaseline']));
 
 $router->dispatch(
     $_SERVER['REQUEST_METHOD'] ?? 'GET',

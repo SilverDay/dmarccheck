@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 /**
  * bin/healthcheck.php — spec §11. Point-in-time DNS/network posture check,
- * independent of report data. Run manually, on a schedule, or (in a future
- * admin UI) at domain onboarding:
+ * independent of report data. Run manually, on a schedule, or (via the
+ * admin UI's "add domain" action, DomainController::add()) at domain
+ * onboarding — both share HealthCheckRunnerFactory for the check wiring:
  *
  *   php bin/healthcheck.php                        # every active domain, trigger=manual
  *   php bin/healthcheck.php example.com             # one domain, trigger=manual
@@ -18,25 +19,9 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Config;
 use App\Database;
-use App\Enrichment\SystemRdnsResolver;
-use App\HealthCheck\Checks\BimiCheck;
-use App\HealthCheck\Checks\DkimCheck;
-use App\HealthCheck\Checks\DmarcCheck;
-use App\HealthCheck\Checks\DnsblCheck;
-use App\HealthCheck\Checks\DnssecCheck;
-use App\HealthCheck\Checks\HealthCheck;
-use App\HealthCheck\Checks\MtaStsCheck;
-use App\HealthCheck\Checks\MxCheck;
-use App\HealthCheck\Checks\RdnsFcrdnsCheck;
-use App\HealthCheck\Checks\ReportDestinationAuthCheck;
-use App\HealthCheck\Checks\SpfCheck;
-use App\HealthCheck\Checks\StartTlsCheck;
-use App\HealthCheck\Checks\TlsRptCheck;
 use App\HealthCheck\HealthCheckItemResult;
 use App\HealthCheck\HealthCheckRepository;
-use App\HealthCheck\HealthCheckRunner;
-use App\HealthCheck\SystemDigLookup;
-use App\HealthCheck\SystemDnsResolver;
+use App\HealthCheck\HealthCheckRunnerFactory;
 
 $config = Config::load();
 $pdo    = Database::connect($config);
@@ -57,21 +42,8 @@ if (!\in_array($trigger, ['manual', 'scheduled'], true)) {
     exit(1);
 }
 
-$dns = new SystemDnsResolver();
-$dig = new SystemDigLookup(
-    (string) $config->get('healthcheck.resolver', '127.0.0.1'),
-    (int) $config->get('healthcheck.dig_timeout_seconds', 5)
-);
-$rdns       = new SystemRdnsResolver();
 $repository = new HealthCheckRepository($pdo);
-
-/** @var array<string, string> $dnsblZones */
-$dnsblZones = $config->get('healthcheck.dnsbl_zones', []);
-/** @var list<string> $configuredSelectors */
-$configuredSelectors = $config->get('healthcheck.dkim_selectors', []);
-$dqsKey              = (string) $config->get('healthcheck.spamhaus_dqs_key', '');
-$smtpTimeout         = (int) $config->get('healthcheck.smtp_timeout_seconds', 5);
-$httpTimeout         = (int) $config->get('healthcheck.http_timeout_seconds', 5);
+$factory    = new HealthCheckRunnerFactory($config, $repository);
 
 if ($domainArg !== null) {
     $stmt = $pdo->prepare('SELECT id, domain FROM domains WHERE domain = ? AND active = 1');
@@ -91,28 +63,7 @@ foreach ($domains as $row) {
     $domainId = (int) $row['id'];
     $domain   = (string) $row['domain'];
 
-    $selectors = array_values(array_unique([
-        ...$configuredSelectors,
-        ...$repository->observedDkimSelectors($domainId),
-    ]));
-
-    /** @var list<HealthCheck> $checks */
-    $checks = [
-        new SpfCheck($dns),
-        new DmarcCheck($dns),
-        new ReportDestinationAuthCheck($dns),
-        new DkimCheck($dns, $selectors),
-        new MxCheck($dns),
-        new DnssecCheck($dig),
-        new MtaStsCheck($dns, $httpTimeout),
-        new TlsRptCheck($dns),
-        new BimiCheck($dns),
-        new StartTlsCheck($dns, $smtpTimeout),
-        new DnsblCheck($dns, $dig, $dqsKey, $dnsblZones),
-        new RdnsFcrdnsCheck($dns, $rdns),
-    ];
-
-    $runner = new HealthCheckRunner($checks, $repository);
+    $runner = $factory->forDomain($domainId);
 
     try {
         $items = $runner->run($domainId, $domain, $trigger);
