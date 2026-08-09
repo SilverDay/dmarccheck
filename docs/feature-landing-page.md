@@ -1,6 +1,6 @@
 # Feature Spec — Public Landing Page
 
-**Status:** Proposed  
+**Status:** Built 2026-08-09. `src/Http/Controllers/LandingController.php` renders the hero/about/capabilities/help-CTA sections; `public/index.php`'s `/` route dispatches to it (unauthenticated) or `DomainController::index()` (authenticated) via a closure, since `Router` has no path-param support to do this any other way. Two deviations: no `HELP_SYSTEM_ENABLED` fallback (§7 — the help system is live, so the link is unconditional) and no version/source link in the footer (§4.2 — this codebase has no version-tracking mechanism and is a private internal tool, not an attributed public project).  
 **Relates to:** spec §7 (Dashboard), §15 (Auth/RBAC); feature-helpsystem.md
 
 ---
