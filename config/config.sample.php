@@ -98,6 +98,10 @@ return [
         'heartbeat_days'      => 3,      // §8 dead-man's-switch
         'unknown_ip_volume'   => 50,
         'pass_rate_drop_pct'  => 10,
+
+        'window_days'             => 1,   // "recent" day-over-day window for volume + pass-rate checks
+        'pass_rate_baseline_days' => 30,  // trailing window the recent pass rate is compared against
+        'pass_rate_min_count'     => 50,  // minimum sample size, both windows, before judging a pass-rate drop
     ],
 
     // §10 — R1-R12 rule engine. Reuses alerting.unknown_ip_volume for R5/R6
