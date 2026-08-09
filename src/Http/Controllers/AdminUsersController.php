@@ -230,11 +230,12 @@ final class AdminUsersController
             return;
         }
 
-        $user   = $this->targetUser();
-        $reason = trim((string) ($_POST['reason'] ?? ''));
+        $user             = $this->targetUser();
+        $reason           = trim((string) ($_POST['reason'] ?? ''));
+        $identityVerified = isset($_POST['identity_verified']);
 
-        if ($user === null || $reason === '') {
-            $this->renderList($actor, error: 'A reason is required to reset MFA.');
+        if ($user === null || $reason === '' || !$identityVerified) {
+            $this->renderList($actor, error: "A reason is required, and you must confirm the user's identity was verified out-of-band, to reset MFA.");
 
             return;
         }
@@ -248,7 +249,10 @@ final class AdminUsersController
         $token = $this->invitations->issue($user->email, $user->role, $actor->id);
         $this->sendInviteEmail($user->email, $token);
 
-        $this->audit->record($actor->id, 'user.mfa_reset', $user->email, ['reason' => $reason], $this->clientIp());
+        $this->audit->record($actor->id, 'user.mfa_reset', $user->email, [
+            'reason'            => $reason,
+            'identity_verified' => true,
+        ], $this->clientIp());
         $this->renderList($actor, flash: "MFA cleared for {$user->email} — a new invitation was sent to re-enroll.");
     }
 
@@ -353,7 +357,10 @@ final class AdminUsersController
                 'Reset MFA',
                 $idField,
                 $csrfField,
-                $stepUpField . '<input type="text" name="reason" placeholder="Reason (required)" required style="font-size:12px; padding:4px 6px; border:1px solid var(--color-border); border-radius:4px; margin-right:6px;">'
+                $stepUpField
+                    . '<label style="font-size:11px; display:inline-flex; align-items:center; gap:4px; margin-right:6px;">'
+                    . '<input type="checkbox" name="identity_verified" value="1" required> Identity verified out-of-band</label>'
+                    . '<input type="text" name="reason" placeholder="Reason (required)" required style="font-size:12px; padding:4px 6px; border:1px solid var(--color-border); border-radius:4px; margin-right:6px;">'
             );
             $actions[] = $this->actionForm('/admin/users/revoke-sessions', 'Force logout', $idField, $csrfField, $stepUpField);
             $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpField, danger: true);
