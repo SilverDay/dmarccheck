@@ -12,7 +12,7 @@ use OTPHP\TOTP;
  * users.totp_secret is stored encrypted at rest (schema comment, §15.8) —
  * secretbox (XSalsa20-Poly1305) with a random nonce prefixed to the
  * ciphertext, keyed by app.totp_encryption_key. This key is distinct from
- * the CSRF app_secret (Csrf) — never reuse a key across purposes.
+ * the CSRF csrf_secret (Csrf) — never reuse a key across purposes.
  */
 final class TotpService
 {
@@ -56,6 +56,28 @@ final class TotpService
     public function verify(string $encryptedSecret, string $code): bool
     {
         return $this->verifyPlaintext($this->decrypt($encryptedSecret), $code);
+    }
+
+    /**
+     * Like verify(), but returns the TOTP period counter (floor(time()/30))
+     * on success so the caller can record it for replay protection (F-02),
+     * or null on failure.
+     */
+    public function verifyGetPeriod(string $encryptedSecret, string $code): ?int
+    {
+        $code = trim($code);
+
+        if ($code === '' || !ctype_digit($code)) {
+            return null;
+        }
+
+        $totp = TOTP::createFromSecret($this->decrypt($encryptedSecret));
+
+        if (!$totp->verify($code, null, self::LEEWAY_SECONDS)) {
+            return null;
+        }
+
+        return (int) floor(time() / $totp->getPeriod());
     }
 
     /** For the brief pre-storage confirmation step during enrollment (see generate()). */

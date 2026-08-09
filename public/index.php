@@ -12,6 +12,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 use App\Auth\AuditLog;
 use App\Auth\Csrf;
 use App\Auth\InvitationService;
+use App\Auth\LoginRateLimiter;
 use App\Auth\Mailer;
 use App\Auth\PasswordHasher;
 use App\Auth\PasswordResetService;
@@ -51,13 +52,17 @@ $pdo = Database::connect($config);
 $baseUrl = (string) $config->require('app.base_url');
 $secureCookie = str_starts_with($baseUrl, 'https://');
 
+if ($secureCookie) {
+    header('Strict-Transport-Security: max-age=63072000; includeSubDomains');
+}
+
 $hasher = new PasswordHasher();
 $totp = new TotpService((string) $config->require('app.totp_encryption_key'));
 $recoveryCodes = new RecoveryCodes($hasher);
 $recoveryCodesCount = (int) $config->get('app.recovery_codes_count', 10);
 $users = new UserRepository($pdo);
-$csrf = new Csrf((string) $config->require('app.app_secret'));
-$sealed = new SealedCookie((string) $config->require('app.app_secret'), $secureCookie);
+$csrf = new Csrf((string) $config->require('app.csrf_secret'));
+$sealed = new SealedCookie((string) $config->require('app.cookie_seal_secret'), $secureCookie);
 $sessions = new SessionManager(
     $pdo,
     (string) $config->get('app.session_cookie_name', 'dmarc_session'),
@@ -78,9 +83,10 @@ $webauthn = new WebauthnService(
 $webauthnStore = new WebauthnCredentialStore($pdo);
 
 $auth = new AuthMiddleware($sessions, $users, $csrf);
+$rateLimiter = new LoginRateLimiter($pdo);
 
 $authController = new AuthController(
-    $pdo, $users, $hasher, $totp, $recoveryCodes, $sessions, $webauthn, $webauthnStore, $sealed, $audit, $auth,
+    $pdo, $users, $hasher, $totp, $recoveryCodes, $sessions, $webauthn, $webauthnStore, $sealed, $audit, $auth, $rateLimiter,
 );
 $inviteController = new InviteController(
     $pdo, $users, $invitations, $hasher, $totp, $recoveryCodes, $recoveryCodesCount,

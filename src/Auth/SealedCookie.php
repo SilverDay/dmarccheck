@@ -10,7 +10,7 @@ namespace App\Auth;
  * session exists: the password->TOTP step of login, and WebAuthn ceremony
  * challenges (registration and login both happen before/without a
  * `sessions` row in the unauthenticated login case). Sealed with
- * sodium_crypto_secretbox under a key derived from app.app_secret, with a
+ * sodium_crypto_secretbox under a key derived from app.cookie_seal_secret, with a
  * `$purpose` tag mixed into the key derivation so a cookie sealed for one
  * purpose can't be replayed as another.
  */

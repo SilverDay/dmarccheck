@@ -128,9 +128,12 @@ return [
         'webauthn_rp_id'   => 'dmarc.silverday.de',
         'webauthn_rp_name' => 'DMARC Analyzer',
 
-        // §15 auth — generate with: php -r "echo bin2hex(random_bytes(32));"
-        // HMAC key for CSRF synchronizer tokens. Never reuse for encryption.
-        'app_secret' => '',
+        // §15 auth — generate each independently with:
+        // php -r "echo bin2hex(random_bytes(32));"
+        // HMAC key for CSRF synchronizer tokens:
+        'csrf_secret' => '',
+        // Encryption key for sealed cookies (ceremony + step-up):
+        'cookie_seal_secret' => '',
 
         // §15.8 — encrypts users.totp_secret at rest. Generate with:
         // php -r "echo base64_encode(sodium_crypto_secretbox_keygen());"

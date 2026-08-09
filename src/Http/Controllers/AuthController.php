@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Auth\AuditLog;
 use App\Auth\AuthException;
+use App\Auth\LoginRateLimiter;
 use App\Auth\PasswordHasher;
 use App\Auth\RecoveryCodes;
 use App\Auth\SealedCookie;
@@ -33,6 +34,14 @@ final class AuthController
     private const string PURPOSE_2FA     = 'login_2fa';
     private const string PURPOSE_PASSKEY = 'login_passkey';
 
+    /**
+     * Pre-computed Argon2id hash of the string "dummy" — used only to ensure
+     * the login path always spends Argon2id time regardless of whether the
+     * submitted email exists, preventing timing-based user enumeration (F-03).
+     * Generated once with password_hash('dummy', PASSWORD_ARGON2ID).
+     */
+    private const string DUMMY_HASH = '$argon2id$v=19$m=65536,t=4,p=1$NVNaYnpJNDZlRGcxZUtQYQ$fFOFpvaepRsqncV9HdTrsEGf1eP3snd+vz3Toh/OMSU';
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly UserRepository $users,
@@ -45,6 +54,7 @@ final class AuthController
         private readonly SealedCookie $sealed,
         private readonly AuditLog $audit,
         private readonly AuthMiddleware $auth,
+        private readonly LoginRateLimiter $rateLimiter,
     ) {
     }
 
@@ -63,11 +73,30 @@ final class AuthController
     {
         $email    = trim((string) ($_POST['email'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
-        $user     = $this->users->findByEmail($email);
 
-        if ($user === null || !$user->isActive() || !$user->hasPassword()
-                           || !$this->hasher->verify($password, (string) $user->credentialHash)
-        ) {
+        // Rate limit by IP before any DB lookup (F-04). The check is done
+        // before findByEmail() so rate-limited responses still consume Argon2id
+        // time (via DUMMY_HASH below) to avoid exposing a fast-path.
+        $ip           = $this->clientIp();
+        $rateLimited  = !$this->rateLimiter->check($ip);
+
+        $user = $this->users->findByEmail($email);
+
+        // Always run Argon2id verification regardless of whether the user exists,
+        // so response timing does not reveal whether the email is registered (F-03).
+        $hashToVerify = ($user !== null && $user->hasPassword())
+            ? (string) $user->credentialHash
+            : self::DUMMY_HASH;
+        $passwordOk = $this->hasher->verify($password, $hashToVerify);
+
+        if ($rateLimited) {
+            $this->renderLoginForm('Too many login attempts. Please wait and try again.', $email);
+
+            return;
+        }
+
+        if ($user === null || !$user->isActive() || !$user->hasPassword() || !$passwordOk) {
+            $this->rateLimiter->recordFailure($ip);
             $this->audit->record(null, 'login.failed', $email, ['reason' => 'bad_credentials'], $this->clientIp());
             $this->renderLoginForm('Invalid email or password.', $email);
 
@@ -120,11 +149,23 @@ final class AuthController
 
         $code   = trim((string) ($_POST['code'] ?? ''));
         $method = str_contains($code, '-') ? 'recovery_code' : 'totp';
+
+        // Rate limit the TOTP step too — TOTP has only 10⁶ codes and
+        // recovery codes are finite (F-04).
+        $ip = $this->clientIp();
+
+        if (!$this->rateLimiter->check($ip)) {
+            $this->renderTotpForm('Too many login attempts. Please wait and try again.');
+
+            return;
+        }
+
         $ok     = $method === 'totp'
-            ? $this->totp->verify((string) $user->totpSecretEncrypted, $code)
+            ? $this->verifyTotpWithReplayProtection($user->id, (string) $user->totpSecretEncrypted, $code)
             : $this->consumeRecoveryCode($user->id, $code);
 
         if (!$ok) {
+            $this->rateLimiter->recordFailure($ip);
             $this->audit->record($user->id, 'login.failed', $user->email, ['reason' => 'bad_' . $method], $this->clientIp());
             $this->renderTotpForm('Invalid code.');
 
@@ -234,22 +275,74 @@ final class AuthController
         $this->json(['ok' => true, 'redirect' => '/']);
     }
 
-    private function consumeRecoveryCode(int $userId, string $submitted): bool
+    /**
+     * Verify a TOTP code and reject it if the same period counter has already
+     * been accepted for this user (replay protection — F-02, NIST SP 800-63B §5.1.3.2).
+     * The unique constraint on used_totp_codes(user_id, period) provides a
+     * DB-level backstop against concurrent replays.
+     */
+    private function verifyTotpWithReplayProtection(int $userId, string $encryptedSecret, string $code): bool
     {
-        $stmt = $this->pdo->prepare('SELECT id, code_hash, consumed_at FROM recovery_codes WHERE user_id = ?');
-        $stmt->execute([$userId]);
-        /** @var list<array{id: int, code_hash: string, consumed_at: ?string}> $rows */
-        $rows = $stmt->fetchAll();
+        $period = $this->totp->verifyGetPeriod($encryptedSecret, $code);
 
-        $matchId = $this->recoveryCodes->findMatch($rows, $submitted);
-
-        if ($matchId === null) {
+        if ($period === null) {
             return false;
         }
 
-        $this->pdo->prepare('UPDATE recovery_codes SET consumed_at = NOW() WHERE id = ?')->execute([$matchId]);
+        // Attempt to INSERT the period counter; a duplicate means this code was
+        // already used and the INSERT will fail via the unique constraint.
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO used_totp_codes (user_id, period) VALUES (?, ?)'
+            )->execute([$userId, $period]);
+        } catch (\PDOException $e) {
+            // Duplicate key — code already consumed in this period.
+            if (str_starts_with($e->getCode(), '23')) {
+                return false;
+            }
+            throw $e;
+        }
+
+        // Prune entries older than 2 minutes (leeway * 2 + buffer) so the
+        // table stays small without needing a separate cron job.
+        $this->pdo->prepare(
+            'DELETE FROM used_totp_codes WHERE used_at < DATE_SUB(NOW(), INTERVAL 2 MINUTE)'
+        )->execute();
 
         return true;
+    }
+
+    private function consumeRecoveryCode(int $userId, string $submitted): bool
+    {
+        // SELECT … FOR UPDATE acquires row-level locks before the PHP match,
+        // preventing two concurrent requests from both seeing consumed_at = NULL
+        // and consuming the same code (TOCTOU race — F-01).
+        $this->pdo->beginTransaction();
+
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT id, code_hash, consumed_at FROM recovery_codes WHERE user_id = ? FOR UPDATE'
+            );
+            $stmt->execute([$userId]);
+            /** @var list<array{id: int, code_hash: string, consumed_at: ?string}> $rows */
+            $rows = $stmt->fetchAll();
+
+            $matchId = $this->recoveryCodes->findMatch($rows, $submitted);
+
+            if ($matchId === null) {
+                $this->pdo->rollBack();
+
+                return false;
+            }
+
+            $this->pdo->prepare('UPDATE recovery_codes SET consumed_at = NOW() WHERE id = ?')->execute([$matchId]);
+            $this->pdo->commit();
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 
     private function renderLoginForm(?string $error = null, string $email = ''): void
