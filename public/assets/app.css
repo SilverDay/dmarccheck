@@ -299,8 +299,8 @@ th a.active { color: var(--color-accent); }
 td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px; }
 
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
-.health-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
-.health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.health-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
+.health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-left: auto; }
 
 .posture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
 .posture-card { display: flex; flex-direction: column; gap: 8px; }
