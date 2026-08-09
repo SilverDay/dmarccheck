@@ -1,11 +1,18 @@
 /*
  * Help-tooltip popover (docs/feature-helpsystem.md §4.1/§6.2). Vanilla JS,
  * no build step, matching the project's no-framework convention. Fetches
- * /help/inline?slug= (auth-gated, dashboard-only) and renders a small
- * popover inserted right after the trigger button in normal document flow
- * — no position:fixed/JS coordinate math, kept deliberately simple.
+ * /help/inline?slug= (auth-gated, dashboard-only) and renders a floating
+ * popover positioned via getBoundingClientRect() and appended to <body> —
+ * an in-flow popover was tried first but grid layouts (e.g. .health-grid)
+ * stretch every cell in a row to match the tallest one, so any in-flow
+ * content growth in a single cell inflated the whole row. position:fixed
+ * keeps the popover fully out of document flow, so it can never affect
+ * layout no matter which container the trigger lives in.
  */
 (function () {
+    var MAX_WIDTH = 320;
+    var MARGIN = 8;
+
     var activePopover = null;
     var activeButton = null;
 
@@ -19,6 +26,17 @@
             activeButton.removeAttribute('aria-describedby');
             activeButton = null;
         }
+    }
+
+    function positionPopover(button, popover) {
+        var rect = button.getBoundingClientRect();
+        var left = Math.min(rect.left, window.innerWidth - MAX_WIDTH - MARGIN);
+        left = Math.max(left, MARGIN);
+
+        var top = rect.bottom + 6;
+
+        popover.style.left = left + 'px';
+        popover.style.top = top + 'px';
     }
 
     function openPopover(button, data) {
@@ -39,12 +57,9 @@
         link.textContent = 'Learn more →';
         popover.appendChild(link);
 
-        // Appended as the LAST child of the row, not inserted right after the
-        // button — the button often isn't the last element in its row (e.g.
-        // a trailing category/status label follows it), and inserting mid-row
-        // pushed that trailing content onto its own orphaned line once the
-        // popover's flex-basis:100% forced a wrap.
-        button.parentElement.appendChild(popover);
+        document.body.appendChild(popover);
+        positionPopover(button, popover);
+
         button.setAttribute('aria-expanded', 'true');
         button.setAttribute('aria-describedby', id);
 
@@ -94,5 +109,11 @@
                 closePopover();
             }
         });
+
+        // position:fixed tracks the viewport, not the trigger — rather than
+        // re-computing on every scroll/resize tick, just close on either,
+        // same as most native browser tooltips do.
+        window.addEventListener('scroll', closePopover, true);
+        window.addEventListener('resize', closePopover);
     });
 })();
