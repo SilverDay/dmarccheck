@@ -20,7 +20,8 @@ final class LandingController
         $body = $this->renderHero()
             . $this->renderAbout()
             . $this->renderCapabilities()
-            . $this->renderHelpCta();
+            . $this->renderHelpCta()
+            . $this->renderFooter();
 
         View::render('Welcome', $body, null);
     }
@@ -72,5 +73,19 @@ final class LandingController
             . '<p class="card-sub">The built-in DMARC 101 guide covers everything from SPF basics to reading aggregate reports and understanding each recommendation rule. No account required.</p>'
             . '<a href="/help" class="btn btn-secondary">Browse the help articles &rarr;</a>'
             . '</div>';
+    }
+
+    /**
+     * This deployment isn't multi-tenant SaaS — there's no account-signup
+     * path (spec §15.2: invitation-only), so the only way for someone else
+     * to use this tool is to run their own instance. Link the source so
+     * they can.
+     */
+    private function renderFooter(): string
+    {
+        return '<footer class="landing-footer">'
+            . '<p>DMARC Analyzer is free, self-hosted software — there\'s no signup here because there are no tenants, just this one team\'s instance.'
+            . ' <a href="https://github.com/SilverDay/dmarccheck">Get the source on GitHub</a> to run your own.</p>'
+            . '</footer>';
     }
 }
