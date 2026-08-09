@@ -39,7 +39,12 @@
         link.textContent = 'Learn more →';
         popover.appendChild(link);
 
-        button.insertAdjacentElement('afterend', popover);
+        // Appended as the LAST child of the row, not inserted right after the
+        // button — the button often isn't the last element in its row (e.g.
+        // a trailing category/status label follows it), and inserting mid-row
+        // pushed that trailing content onto its own orphaned line once the
+        // popover's flex-basis:100% forced a wrap.
+        button.parentElement.appendChild(popover);
         button.setAttribute('aria-expanded', 'true');
         button.setAttribute('aria-describedby', id);
 
