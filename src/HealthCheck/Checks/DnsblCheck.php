@@ -15,11 +15,14 @@ use App\HealthCheck\HealthCheckItemResult;
  * as clean — per §11.6's explicit requirement that a blocked/misconfigured
  * query must never be misread as "not listed."
  *
- * The exact DQS keyed-zone hostname format (config('healthcheck.dnsbl_zones'))
- * should be verified against current Spamhaus documentation before relying
- * on this in production — spec §11.4 flags provider query mechanics as a
- * build-time verification item, and no real DQS key was available to test
- * the "listed" response path end-to-end while building this.
+ * The DQS keyed-zone hostname format (config('healthcheck.dnsbl_zones'))
+ * was verified live 2026-08-09 against a real DQS key: Spamhaus's "always
+ * listed" test entries (ZEN's 127.0.0.2, DBL's dbltest.com) resolve
+ * correctly through zen.dq.spamhaus.net/dbl.dq.spamhaus.net (note "dq",
+ * not "dqs" — an earlier guess), and a genuinely clean domain correctly
+ * comes back empty. The free public mirrors (zen.spamhaus.org) are gone
+ * too — confirmed NXDOMAIN with a real authoritative SOA, not a blocked
+ * query — so DQS is the only path now, not just the recommended one.
  */
 final class DnsblCheck implements HealthCheck
 {

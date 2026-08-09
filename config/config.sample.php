@@ -75,7 +75,12 @@ return [
         // resolvers and return 127.255.255.254. Register:
         // https://www.spamhaus.com/free-trial/free-trial-for-data-query-service/
         'spamhaus_dqs_key' => '',
-        'resolver'         => '127.0.0.1',
+        // Must be a real, reachable resolver — 127.0.0.1 is a common but WRONG
+        // guess: on modern Ubuntu/systemd hosts the actual local resolver is
+        // systemd-resolved's stub at 127.0.0.53 (`ss -tulnp | grep :53` to
+        // confirm on your host; a bare "connection refused" from dig means
+        // this value is wrong, not that DNS itself is broken).
+        'resolver'         => '127.0.0.53',
         'dkim_selectors'   => ['default', 'mail', 'google', 'selector1', 'selector2', 'k1', 's1', 's2'],
 
         // §11.4 — keep every network probe lightweight and bounded.
@@ -83,12 +88,17 @@ return [
         'http_timeout_seconds' => 5,
         'dig_timeout_seconds'  => 5,
 
-        // §11.6 — DQS keyed zone hostnames. Verify against current Spamhaus
-        // DQS documentation before relying on this in production; not
-        // hardcoded into DnsblCheck so it can be corrected without a code change.
+        // §11.6 — DQS keyed zone hostnames. Verified live 2026-08-09 against a
+        // real DQS key: it's "dq", not "dqs" — dqs.spamhaus.net doesn't exist
+        // as a zone at all (NXDOMAIN with a real authoritative SOA elsewhere,
+        // i.e. not a network/resolver problem). The free public mirrors
+        // (zen.spamhaus.org) are also gone — confirmed NXDOMAIN, not just
+        // blocked — so DQS is the only path now. Not hardcoded into
+        // DnsblCheck so it can be corrected again without a code change if
+        // Spamhaus moves it a second time.
         'dnsbl_zones' => [
-            'zen' => 'zen.dqs.spamhaus.net',
-            'dbl' => 'dbl.dqs.spamhaus.net',
+            'zen' => 'zen.dq.spamhaus.net',
+            'dbl' => 'dbl.dq.spamhaus.net',
         ],
     ],
 
