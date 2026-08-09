@@ -82,7 +82,7 @@ final class ReportParser
             throw new RuntimeException('Missing report_metadata or policy_published');
         }
 
-        $range = $meta === null ? null : $this->firstChild($meta, 'date_range');
+        $range = $this->firstChild($meta, 'date_range');
 
         // §5: match on policy_published/domain — report_metadata does not
         // reliably state which of our domains the report concerns.
