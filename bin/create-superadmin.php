@@ -60,7 +60,7 @@ try {
     // the bootstrap case where no actor yet exists.
     $token   = $invitations->issue($email, Roles::SUPER_ADMIN, invitedByUserId: null);
     $baseUrl = rtrim((string) $config->get('app.base_url', ''), '/');
-    $link    = $baseUrl . '/accept-invite?token=' . urlencode($token);
+    $link    = $baseUrl . '/invite?token=' . urlencode($token);
 
     echo "Super-admin invitation issued for: {$email}\n";
     echo "Invitation link (valid for {$config->get('app.invitation_ttl_hours', 168)} hours):\n\n";
