@@ -248,8 +248,8 @@ final class InviteController
         $body       = '<div class="narrow">'
             . '<div class="login-mark">' . View::icon('shield') . '</div>'
             . '<div class="card">'
-            . '<h2 style="text-align:center;">Accept invitation</h2>'
-            . '<p class="card-sub" style="text-align:center;">' . View::e($email) . '</p>';
+            . '<h2 class="text-center">Accept invitation</h2>'
+            . '<p class="card-sub text-center">' . View::e($email) . '</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
@@ -261,7 +261,7 @@ final class InviteController
             . '<input type="password" id="password" name="password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autofocus autocomplete="new-password"></div>'
             . '<div class="field"><label for="password_confirm">Confirm password</label>'
             . '<input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password"></div>'
-            . '<button type="submit" class="btn btn-primary btn-block" style="margin-top:6px;">Continue — you\'ll set up an authenticator app next</button>'
+            . '<button type="submit" class="btn btn-primary btn-block mt-sm">Continue — you\'ll set up an authenticator app next</button>'
             . '</form>'
             . '</div>'
 
@@ -290,7 +290,7 @@ final class InviteController
         $body = '<div class="narrow"><div class="card">'
             . '<h2>Set up your authenticator app</h2>'
             . '<p class="card-sub">Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password).</p>'
-            . '<p class="secret" style="display:block; text-align:center; padding:10px; margin-bottom:12px;">' . View::e($secret) . '</p>';
+            . '<p class="secret secret-block">' . View::e($secret) . '</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';

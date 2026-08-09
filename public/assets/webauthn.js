@@ -129,6 +129,11 @@
                 }
             });
 
+            const missing = fieldNames.filter(function (name) { return !fields[name]; });
+            if (missing.length > 0) {
+                throw new Error('Enter your email above first.');
+            }
+
             const csrfInput = document.querySelector('[name="csrf_token"]');
             if (csrfInput) {
                 fields.csrf_token = csrfInput.value;

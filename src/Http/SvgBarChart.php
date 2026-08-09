@@ -52,7 +52,7 @@ final class SvgBarChart
             $barW         = max(1.0, $barWidth - self::BAR_GAP);
 
             $bars .= sprintf(
-                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-danger-fg)"><title>%s: %d failed</title></rect>',
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="var(--status-danger-fg)"><title>%s: %d failed</title></rect>',
                 $x,
                 $plotHeight - $failedHeight,
                 $barW,
@@ -61,7 +61,7 @@ final class SvgBarChart
                 $d['failed'],
             );
             $bars .= sprintf(
-                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-success-fg)"><title>%s: %d passed</title></rect>',
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="var(--status-success-fg)"><title>%s: %d passed</title></rect>',
                 $x,
                 $plotHeight - $failedHeight - $passedHeight,
                 $barW,
@@ -120,14 +120,14 @@ final class SvgBarChart
             $barW         = max(1.0, $barWidth - self::BAR_GAP);
 
             $bars .= sprintf(
-                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-danger-fg)"/>',
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="var(--status-danger-fg)"/>',
                 $x,
                 self::SPARK_HEIGHT - $failedHeight,
                 $barW,
                 $failedHeight,
             );
             $bars .= sprintf(
-                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" style="fill:var(--status-success-fg)"/>',
+                '<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="var(--status-success-fg)"/>',
                 $x,
                 self::SPARK_HEIGHT - $failedHeight - $passedHeight,
                 $barW,

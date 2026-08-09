@@ -324,12 +324,12 @@ final class AdminUsersController
             . '<th>Email</th><th>Role</th><th>Status</th><th>Actions</th>'
             . '</tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
 
-        $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+        $body .= '<div class="narrow narrow-tight"><div class="card">'
             . '<h2>Invite a user</h2>'
             . '<form method="post" action="/admin/users/invite">'
             . View::csrfField($csrf) . $stepUpField
             . '<div class="field"><label for="email">Email</label><input type="email" id="email" name="email" required></div>'
-            . '<div class="field"><label for="role">Role</label><select id="role" name="role" class="role-select" style="width:100%; padding:8px 10px;">'
+            . '<div class="field"><label for="role">Role</label><select id="role" name="role" class="role-select block">'
             . '<option value="' . Roles::READ_ONLY . '">Read-only</option>'
             . '<option value="' . Roles::ADMIN . '">Admin</option>'
             . '<option value="' . Roles::SUPER_ADMIN . '">Super admin</option>'
@@ -358,9 +358,9 @@ final class AdminUsersController
                 $idField,
                 $csrfField,
                 $stepUpField
-                    . '<label style="font-size:11px; display:inline-flex; align-items:center; gap:4px; margin-right:6px;">'
+                    . '<label class="inline-check-label">'
                     . '<input type="checkbox" name="identity_verified" value="1" required> Identity verified out-of-band</label>'
-                    . '<input type="text" name="reason" placeholder="Reason (required)" required style="font-size:12px; padding:4px 6px; border:1px solid var(--color-border); border-radius:4px; margin-right:6px;">'
+                    . '<input type="text" name="reason" placeholder="Reason (required)" required class="input-inline">'
             );
             $actions[] = $this->actionForm('/admin/users/revoke-sessions', 'Force logout', $idField, $csrfField, $stepUpField);
             $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpField, danger: true);
@@ -405,7 +405,7 @@ final class AdminUsersController
         string $stepUpField,
         bool $danger = false,
     ): string {
-        return '<form method="post" action="' . View::e($action) . '" style="display:inline-flex; align-items:center;">'
+        return '<form method="post" action="' . View::e($action) . '" class="inline-form">'
             . $idField . $csrfField . $stepUpField
             . '<button type="submit" class="btn btn-sm ' . ($danger ? 'btn-danger' : 'btn-secondary') . '">' . View::e($label) . '</button></form>';
     }

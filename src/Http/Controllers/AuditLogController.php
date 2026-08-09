@@ -55,7 +55,7 @@ final class AuditLogController
         $body = '<div class="page-head"><div><h1>Audit log</h1>'
             . '<div class="sub">Most recent ' . \count($entries) . ' entr' . (\count($entries) === 1 ? 'y' : 'ies') . ' &middot; super admin only</div></div></div>';
 
-        $body .= '<div class="narrow" style="margin-bottom:0;"><form method="get" action="/admin/audit-log" class="inline-form" style="gap:8px;">'
+        $body .= '<div class="narrow narrow-tight"><form method="get" action="/admin/audit-log" class="inline-form">'
             . '<input type="text" name="action_prefix" placeholder="Filter by action prefix, e.g. domain." value="' . View::e($actionPrefix ?? '') . '">'
             . '<button type="submit" class="btn btn-secondary btn-sm">Filter</button>'
             . ($actionPrefix !== null ? '<a href="/admin/audit-log" class="btn btn-secondary btn-sm">Clear</a>' : '')

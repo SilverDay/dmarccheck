@@ -119,7 +119,7 @@ final class KnownSendersController
                 View::e((string) $rule['ip_or_cidr']),
                 View::e((string) $rule['label']),
                 View::e((string) $rule['created_at']),
-                '<form method="post" action="/admin/known-senders/delete" style="display:inline-flex;">'
+                '<form method="post" action="/admin/known-senders/delete" class="inline-form">'
                     . View::csrfField($csrf)
                     . '<input type="hidden" name="id" value="' . (int) $rule['id'] . '">'
                     . '<button type="submit" class="btn btn-sm btn-danger">Delete</button></form>'
@@ -143,7 +143,7 @@ final class KnownSendersController
             $domainOptions .= '<option value="' . (int) $domain['id'] . '">' . View::e((string) $domain['domain']) . '</option>';
         }
 
-        $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+        $body .= '<div class="narrow narrow-tight"><div class="card">'
             . '<h2>Add allowlist rule</h2>'
             . '<form method="post" action="/admin/known-senders/add">'
             . View::csrfField($csrf)

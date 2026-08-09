@@ -128,6 +128,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 24px; }
 .stat-tile .label { font-size: 11px; font-weight: 600; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 .stat-tile .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .stat-tile .value.warn { color: var(--status-warning-fg); }
+.stat-tile .value.sm { font-size: 14px; }
 .stat-tile .delta { font-size: 12px; color: var(--color-fg-muted); margin-top: 4px; }
 
 /* ---- table ---- */
@@ -161,6 +162,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---- narrow card layout (auth / settings) ---- */
 .narrow { max-width: 480px; margin: 32px auto; display: flex; flex-direction: column; gap: 16px; }
+.narrow-tight { margin-bottom: 0; }
+.narrow-sm    { max-width: 400px; }
+.narrow-notop { margin-top: 0; }
 .login-mark { text-align: center; }
 .login-mark svg.icon { width: 28px; height: 28px; color: var(--color-accent); }
 .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 20px; }
@@ -200,6 +204,17 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .divider-label::before, .divider-label::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
 .helper-link { text-align: center; font-size: 12.5px; }
 
+.text-center { text-align: center; }
+.mt-sm { margin-top: 6px; }
+.mt-md { margin-top: 14px; }
+.mt-lg { margin-top: 16px; }
+.input-inline {
+  font-size: 12px; padding: 4px 6px; border: 1px solid var(--color-border); border-radius: 4px; margin-right: 6px;
+}
+.inline-check-label {
+  font-size: 11px; display: inline-flex; align-items: center; gap: 4px; margin-right: 6px;
+}
+
 .list-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--color-border); gap: 12px; flex-wrap: wrap; }
 .list-row:last-child { border-bottom: none; }
 .list-row .meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -211,12 +226,14 @@ select.role-select {
   font: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: 6px;
   background: var(--color-surface); color: var(--color-fg);
 }
+select.role-select.block { width: 100%; padding: 8px 10px; }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .flash { background: var(--status-success-bg); color: var(--status-success-fg); border: 1px solid var(--status-success-fg); border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 500; margin: 0 0 16px; }
 .error { background: var(--status-danger-bg); color: var(--status-danger-fg); border: 1px solid var(--status-danger-fg); border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 500; margin: 0 0 16px; }
 .error:empty { display: none; margin: 0; padding: 0; border: 0; } /* JS-filled slots (e.g. #webauthn-error) before any error occurs */
 .secret { font-family: var(--font-mono); font-size: 13px; background: var(--color-surface-muted); padding: 2px 6px; border-radius: 4px; letter-spacing: 0.02em; }
+.secret-block { display: block; text-align: center; padding: 10px; margin-bottom: 12px; }
 ul.secret-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 ul.secret-list li.secret { text-align: center; padding: 8px; }
 
@@ -227,7 +244,7 @@ code { font-family: var(--font-mono); background: var(--color-surface-muted); pa
 .policy-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--color-border); gap: 12px; }
 .policy-row:last-child { border-bottom: none; }
 .policy-label { font-size: 12.5px; color: var(--color-fg-muted); flex-shrink: 0; }
-.inline-form { display: inline-flex; margin: 0; }
+.inline-form { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 .chart-card .trend-chart { width: 100%; height: 160px; display: block; }
 .chart-card .chart-empty { font-size: 12.5px; color: var(--color-fg-muted); }
 .chart-label { font-size: 9px; fill: var(--color-fg-muted); }

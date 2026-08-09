@@ -107,7 +107,7 @@ final class SecurityController
         $body = '<div class="narrow"><div class="card">'
             . '<h2>Set up an authenticator app</h2>'
             . '<p class="card-sub">Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password).</p>'
-            . '<p class="secret" style="display:block; text-align:center; padding:10px; margin-bottom:12px;">' . View::e($totpData['secret']) . '</p>'
+            . '<p class="secret secret-block">' . View::e($totpData['secret']) . '</p>'
             . $this->confirmTotpForm($user)
             . '</div></div>';
 
@@ -380,7 +380,7 @@ final class SecurityController
             $body .= '<p class="error">' . View::e($error) . '</p>';
         }
 
-        $body .= '<div class="narrow" style="margin-top:0;">';
+        $body .= '<div class="narrow narrow-notop">';
 
         // --- Password ---
         $body .= '<div class="card"><h2>Password</h2>';
@@ -394,7 +394,7 @@ final class SecurityController
                 . '<input type="password" id="new_password" name="new_password" minlength="' . PasswordHasher::MIN_LENGTH . '" required autocomplete="new-password"></div>'
                 . '<div class="field"><label for="new_password_confirm">Confirm new password</label>'
                 . '<input type="password" id="new_password_confirm" name="new_password_confirm" required autocomplete="new-password"></div>'
-                . '<button type="submit" class="btn btn-secondary" style="margin-top:6px;">Update password</button>'
+                . '<button type="submit" class="btn btn-secondary mt-sm">Update password</button>'
                 . '</form>';
         } else {
             $body .= '<p class="card-sub">You sign in with a passkey only.</p>';
@@ -411,7 +411,7 @@ final class SecurityController
                 . '<div><div class="name">Recovery codes</div><div class="detail">Regenerate if you\'re running low</div></div></div>'
                 . '<form method="post" action="/account/recovery-codes/regenerate">' . View::csrfField($csrf) . $stepUpField
                 . '<button type="submit" class="btn btn-secondary btn-sm">Regenerate</button></form></div>'
-                . '<form method="post" action="/account/totp/remove" style="margin-top:14px;">'
+                . '<form method="post" action="/account/totp/remove" class="mt-md">'
                 . View::csrfField($csrf) . $stepUpField
                 . '<button type="submit" class="btn btn-danger">' . View::icon('trash') . 'Remove password sign-in</button></form>';
         } else {
@@ -436,7 +436,7 @@ final class SecurityController
                 . '<button type="submit" class="btn btn-danger btn-sm">' . View::icon('trash') . 'Remove</button></form></div>';
         }
 
-        $body .= '<form onsubmit="return false" style="margin-top:14px;">'
+        $body .= '<form onsubmit="return false" class="mt-md">'
             . View::csrfField($csrf) . $stepUpField
             . '<div class="field"><label for="passkey_label">Passkey name (optional)</label>'
             . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></div>'

@@ -405,8 +405,8 @@ final class DomainController
         $body .= '<div class="stats">'
             . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
             . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
-            . '<div class="stat-tile"><div class="label">Last ingestion</div><div class="value" style="font-size:14px;">' . $ingestBadge . '</div></div>'
-            . '<div class="stat-tile"><div class="label">Last health check</div><div class="value mono" style="font-size:14px;">' . View::e($lastHealthCheckAt ?? 'never') . '</div></div>'
+            . '<div class="stat-tile"><div class="label">Last ingestion</div><div class="value sm">' . $ingestBadge . '</div></div>'
+            . '<div class="stat-tile"><div class="label">Last health check</div><div class="value mono sm">' . View::e($lastHealthCheckAt ?? 'never') . '</div></div>'
             . '</div>';
 
         $body .= '<div class="section-head"><h2>Domains</h2></div>'
@@ -415,7 +415,7 @@ final class DomainController
         $body .= $this->renderAttentionPanel() . $this->renderRecentActivity();
 
         if (Roles::atLeast($user->role, Roles::ADMIN)) {
-            $body .= '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+            $body .= '<div class="narrow narrow-tight"><div class="card">'
                 . '<h2>Add domain</h2>'
                 . '<form method="post" action="/domains/add">'
                 . View::csrfField($this->auth->csrfToken())
@@ -869,7 +869,7 @@ final class DomainController
             $currentP  = PolicyLevel::extract($target)                ?? 'reject';
             $currentSp = PolicyLevel::extractSubdomainPolicy($target) ?? 'reject';
 
-            $policyEditCard = '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+            $policyEditCard = '<div class="narrow narrow-tight"><div class="card">'
                 . '<h2>Edit target policy</h2>'
                 . '<form method="post" action="/domain/policy">'
                 . View::csrfField($csrf) . $domainField
@@ -890,7 +890,7 @@ final class DomainController
         $authRecord     = self::crossDomainAuthRecord((string) $domain['domain'], (string) $this->config->require('app.mail_from'));
 
         if ($authRecord !== null) {
-            $authRecordCard = '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+            $authRecordCard = '<div class="narrow narrow-tight"><div class="card">'
                 . '<h2>Cross-domain report authorization</h2>'
                 . '<p class="card-sub">Add this TXT record so receivers accept DMARC reports for this domain (spec §11.2):</p>'
                 . '<code class="rec-evidence">' . View::e($authRecord['name']) . '  IN TXT  &quot;' . View::e($authRecord['value']) . '&quot;</code>'
@@ -999,8 +999,8 @@ final class DomainController
 
             $tr .= sprintf(
                 '<tr><td class="mono">%s</td><td>%s</td><td>%s</td><td>%s</td>'
-                    . '<td class="mono" style="text-align:right;">%d</td>'
-                    . '<td style="text-align:right;">%d%%</td><td style="text-align:right;">%d%%</td></tr>',
+                    . '<td class="mono num">%d</td>'
+                    . '<td class="num">%d%%</td><td class="num">%d%%</td></tr>',
                 View::e((string) $r['ip']),
                 View::e($r['rdns'] !== null ? (string) $r['rdns'] : '—'),
                 View::e($r['asn_org'] !== null ? (string) $r['asn_org'] : '—'),
@@ -1067,7 +1067,7 @@ final class DomainController
 
         foreach ($reports as $r) {
             $rows .= sprintf(
-                '<tr><td>%s</td><td class="mono">%s</td><td class="mono">%s</td><td style="text-align:right;">%d</td><td><a href="%s">View</a></td></tr>',
+                '<tr><td>%s</td><td class="mono">%s</td><td class="mono">%s</td><td class="num">%d</td><td><a href="%s">View</a></td></tr>',
                 View::e((string) $r['reporter_org']),
                 View::e((string) $r['date_begin']),
                 View::e((string) $r['date_end']),
@@ -1096,7 +1096,7 @@ final class DomainController
     private function statTile(string $label, string $value): string
     {
         return '<div class="stat-tile"><div class="label">' . View::e($label) . '</div>'
-            . '<div class="value mono" style="font-size:14px;">' . View::e($value) . '</div></div>';
+            . '<div class="value mono sm">' . View::e($value) . '</div></div>';
     }
 
     /** @param list<array<string, mixed>> $records */
@@ -1125,7 +1125,7 @@ final class DomainController
             }
 
             $rows .= sprintf(
-                '<tr><td class="mono">%s</td><td style="text-align:right;">%d</td><td>%s</td><td>%s</td><td>%s</td><td class="mono">%s</td></tr>'
+                '<tr><td class="mono">%s</td><td class="num">%d</td><td>%s</td><td>%s</td><td>%s</td><td class="mono">%s</td></tr>'
                     . '<tr class="auth-details"><td colspan="6">%s</td></tr>',
                 View::e((string) $r['source_ip']),
                 (int) $r['count'],

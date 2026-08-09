@@ -347,11 +347,11 @@ final class AuthController
 
     private function renderLoginForm(?string $error = null, string $email = ''): void
     {
-        $body = '<div class="narrow" style="max-width:400px;">'
+        $body = '<div class="narrow narrow-sm">'
             . '<div class="login-mark">' . View::icon('shield') . '</div>'
             . '<div class="card">'
-            . '<h2 style="text-align:center;">Sign in</h2>'
-            . '<p class="card-sub" style="text-align:center;">DMARC Analyzer</p>';
+            . '<h2 class="text-center">Sign in</h2>'
+            . '<p class="card-sub text-center">DMARC Analyzer</p>';
 
         if ($error !== null) {
             $body .= '<p class="error">' . View::e($error) . '</p>';
@@ -362,9 +362,9 @@ final class AuthController
             . '<input type="email" id="email" name="email" value="' . View::e($email) . '" required autofocus autocomplete="email"></div>'
             . '<div class="field"><label for="password">Password</label>'
             . '<input type="password" id="password" name="password" required autocomplete="current-password"></div>'
-            . '<button type="submit" class="btn btn-primary btn-block" style="margin-top:6px;">Continue</button>'
+            . '<button type="submit" class="btn btn-primary btn-block mt-sm">Continue</button>'
             . '</form>'
-            . '<div class="divider-label" style="margin-top:16px;">or</div>'
+            . '<div class="divider-label mt-lg">or</div>'
             . '<button type="button" class="btn btn-secondary btn-block" data-webauthn="authenticate"'
             . ' data-options-url="/login/passkey/options" data-verify-url="/login/passkey/verify"'
             . ' data-extra-fields="email">' . View::icon('key') . 'Sign in with a passkey</button>'
@@ -379,7 +379,7 @@ final class AuthController
 
     private function renderTotpForm(?string $error = null): void
     {
-        $body = '<div class="narrow" style="max-width:400px;"><div class="card">'
+        $body = '<div class="narrow narrow-sm"><div class="card">'
             . '<h2>Verification code</h2>'
             . '<p class="card-sub">Enter the 6-digit code from your authenticator app, or a recovery code.</p>';
 
