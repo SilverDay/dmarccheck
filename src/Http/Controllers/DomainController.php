@@ -894,12 +894,17 @@ final class DomainController
             . SvgBarChart::render($trend) . '</div>';
 
         $authRecordCard = '';
-        $authRecord     = self::crossDomainAuthRecord((string) $domain['domain'], (string) $this->config->require('app.mail_from'));
+        $mailFrom       = (string) $this->config->require('app.mail_from');
+        $authRecord     = self::crossDomainAuthRecord((string) $domain['domain'], $mailFrom);
 
         if ($authRecord !== null) {
             $authRecordCard = '<div class="card">'
                 . '<h2>Cross-domain report authorization' . View::helpTooltip('hc-report-auth', 'What this record does') . '</h2>'
-                . '<p class="card-sub">Add this TXT record so receivers accept DMARC reports for this domain (spec §11.2):</p>'
+                . '<p class="card-sub">To have <strong>this tool</strong> receive ' . View::e((string) $domain['domain'])
+                . '&rsquo;s reports, its DMARC record needs <code>rua=mailto:' . View::e($mailFrom)
+                . '</code> — then add this TXT record so receivers actually send them here (spec §11.2). This is independent of the'
+                . ' health check\'s own "report destination auth" result above, which verifies whatever destination the domain\'s'
+                . ' rua= <em>currently</em> points to, not this tool specifically.</p>'
                 . '<code class="rec-evidence">' . View::e($authRecord['name']) . '  IN TXT  &quot;' . View::e($authRecord['value']) . '&quot;</code>'
                 . '</div>';
         }
