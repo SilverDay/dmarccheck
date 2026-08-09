@@ -53,6 +53,7 @@ final class View
 
             if (Roles::atLeast($user->role, Roles::SUPER_ADMIN)) {
                 echo '<a href="/admin/users">Users</a>';
+                echo '<a href="/admin/audit-log">Audit log</a>';
             }
 
             echo '<div class="who">'

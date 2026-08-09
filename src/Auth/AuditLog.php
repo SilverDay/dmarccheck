@@ -52,7 +52,7 @@ final class AuditLog
      */
     public function recent(int $limit, ?string $actionPrefix = null): array
     {
-        $sql = 'SELECT a.actor_user_id, a.action, a.target, a.detail_json, a.created_at, u.email AS actor_email
+        $sql = 'SELECT a.actor_user_id, a.action, a.target, a.detail_json, a.created_at, a.source_ip, u.email AS actor_email
                   FROM audit_log a
                   LEFT JOIN users u ON u.id = a.actor_user_id';
 
@@ -87,6 +87,7 @@ final class AuditLog
                 $row['target'] !== null ? (string) $row['target'] : null,
                 \is_array($detail) ? $detail : [],
                 (string) $row['created_at'],
+                $row['source_ip'] !== null ? Ip::toString((string) $row['source_ip']) : null,
             );
         }
 

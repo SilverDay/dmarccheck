@@ -31,6 +31,7 @@ use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
 use App\Http\AuthMiddleware;
 use App\Http\Controllers\AdminUsersController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DomainController;
 use App\Http\Controllers\InviteController;
@@ -102,6 +103,7 @@ $adminController = new AdminUsersController(
     $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,
 );
 $knownSendersController = new KnownSendersController($pdo, $audit, $auth);
+$auditLogController      = new AuditLogController($audit, $auth);
 $healthCheckRepository   = new HealthCheckRepository($pdo);
 $domainController      = new DomainController(
     $pdo,
@@ -172,6 +174,9 @@ $router->post('/admin/users/revoke-sessions', $auth->guardPost(Roles::SUPER_ADMI
 $router->get('/admin/known-senders', $auth->guard(Roles::ADMIN, [$knownSendersController, 'list']));
 $router->post('/admin/known-senders/add', $auth->guardPost(Roles::ADMIN, [$knownSendersController, 'add']));
 $router->post('/admin/known-senders/delete', $auth->guardPost(Roles::ADMIN, [$knownSendersController, 'delete']));
+
+// --- Audit log viewer (spec §15.7 — Super-admin tier, read-only) -----------
+$router->get('/admin/audit-log', $auth->guard(Roles::SUPER_ADMIN, [$auditLogController, 'list']));
 
 // --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
 $router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));

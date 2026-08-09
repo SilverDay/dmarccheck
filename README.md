@@ -98,7 +98,8 @@ tests/        PHPUnit + fixtures
 - Auth/RBAC (§15) — invitation-only accounts, WebAuthn passkeys or
   password+TOTP+recovery-codes, mandatory MFA, deny-by-default RBAC
   (read-only ⊂ admin ⊂ super admin), CSRF, step-up re-auth on sensitive
-  actions, append-only audit log.
+  actions, append-only audit log with a Super Admin-only viewer (§15.7,
+  filterable by action prefix).
 - `bin/analyze.php` — the R1–R12 rule engine (§10): known/unknown-sender
   auth hygiene, SPF lookup-limit, spoofing-volume, policy-advancement,
   DNS-drift, non-sending, subdomain-`sp`, and forwarder-pattern rules,

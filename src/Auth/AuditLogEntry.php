@@ -15,6 +15,7 @@ final readonly class AuditLogEntry
         public ?string $target,
         public array $detail,
         public string $createdAt,
+        public ?string $sourceIp,
     ) {
     }
 }
