@@ -6,12 +6,16 @@ Self-hosted DMARC aggregate report analyzer. PHP 8.3 (strict types),
 MariaDB 10.11+, Apache, PDO, front-controller routing, no heavy framework.
 Full requirements are in `docs/dmarc-report-analyzer-spec.md`.
 
-> **Status: scaffold, not a finished application.** See *What's implemented*
-> below for an honest split. Ingestion, enrichment, the domain health check,
-> the R1–R12 recommendation engine, alerting, auth/RBAC, and the dashboard
-> (domain list + per-domain drill-down + full domain management: onboarding,
-> baseline approval, policy editing, deactivation/reactivation) are built and
-> unit-tested; only the community-reporting UI is still a stub.
+> **Status: feature-complete against the spec.** See *What's implemented*
+> below for the full breakdown. Ingestion, enrichment, the domain health
+> check, the R1–R12 recommendation engine, alerting, auth/RBAC, and the
+> dashboard (domain list + per-domain drill-down + full domain management:
+> onboarding, baseline approval, policy editing, deactivation/reactivation)
+> are built and unit-tested — the only unbuilt spec item is §10.8 community
+> threat reporting, gated on a T&C/GDPR review that hasn't happened. Two
+> features beyond the original spec are also built: a public landing page
+> and an in-app "DMARC 101" contextual help system (see
+> `docs/feature-helpsystem.md`/`docs/feature-landing-page.md`).
 
 ---
 
@@ -50,13 +54,14 @@ listening, for `bin/ingest.php`, and for the current file). Adjust
 bin/          CLI entrypoints (cron): ingest, enrich, healthcheck, analyze, alert, migrate, retention
 config/       config.sample.php → copy to config.php (gitignored)
 db/           migrations/ (applied in order via bin/migrate.php), seed-domains.sql
-public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js)
+public/       Apache DocumentRoot — front controller + assets/ (icons.svg, app.css, webauthn.js, help.js)
 src/          PSR-4 App\ namespace
   Alerting/   Heartbeat/policy-drift/volume/pass-rate checks, digest email
   Auth/       Sessions, invitations, passkeys/TOTP, RBAC roles, step-up re-auth
   Enrichment/ rDNS/ASN lookup, known_senders CIDR matching
   HealthCheck/  Per-check DNS/network probes (SPF, DMARC, DKIM, MX, DNSSEC, STARTTLS, DNSBL, ...)
-  Http/       Router, AuthMiddleware, View, SvgBarChart, Controllers/ (incl. per-domain drill-down)
+  Help/       "DMARC 101" content catalog + repository (content/*.php, one article per topic)
+  Http/       Router, AuthMiddleware, View, SvgBarChart, Controllers/ (incl. per-domain drill-down, help, landing page)
   Ingest/     Decompressor, ReportParser, ParsedReport, ReportStore,
               TlsRptParser, ParsedTlsRptReport, TlsRptStore
   Recommendation/  R1-R12 rule engine, AnalysisContextBuilder, reconciliation
@@ -142,6 +147,27 @@ tests/        PHPUnit + fixtures
   re-authenticated: deactivate/reactivate a domain — a soft `active` flip
   (not a delete) that removes it from ingestion, health checks, analysis,
   and alerting while keeping its history intact and browsable.
+
+**Beyond the original spec, also built:**
+- Contextual help system (`docs/feature-helpsystem.md`) — an 85-article
+  "DMARC 101" reference (`src/Help/`) covering every DMARC/SPF/DKIM
+  concept, health check, recommendation rule, and alert type this tool
+  surfaces, written against this codebase's actual behavior rather than
+  generic textbook content. Public `/help` index and
+  `/help/article?slug=` pages need no login (shareable links); inline
+  "?" tooltips are wired into the domain drill-down's card headers,
+  recommendation rule IDs, health-check badges, and source-table
+  columns, backed by an auth-gated `/help/inline` JSON endpoint. A
+  completeness test ties the catalog to the actual
+  Rule/HealthCheckItemResult/Alert-check code so a future rule or status
+  can't silently ship a dead tooltip link. Not yet built: a persistent
+  per-page help panel, an onboarding guided walkthrough, and search —
+  see `docs/todo.md`.
+- Public landing page (`docs/feature-landing-page.md`) — `/` now shows
+  an orientation page (what the tool does, a capabilities summary, a
+  link into the help system) for unauthenticated visitors instead of
+  redirecting straight to a bare login form; an active session still
+  goes straight to the dashboard.
 
 **Stubs / not yet written:**
 - §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR
