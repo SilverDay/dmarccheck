@@ -861,7 +861,7 @@ final class DomainController
                 . '</form>';
         }
 
-        $policyCard = '<div class="card"><h2>Policy</h2>'
+        $policyCard = '<div class="card"><h2>Policy' . View::helpTooltip('card-policy', 'What this card shows') . '</h2>'
             . '<div class="policy-row"><span class="policy-label">Status</span>'
             . View::badge($active ? 'success' : 'neutral', $active ? 'Active' : 'Deactivated') . $statusForm . '</div>'
             . '<div class="policy-row"><span class="policy-label">Published</span><span class="policy-pill">' . View::e($current) . '</span>' . $approveForm . '</div>'
@@ -876,7 +876,7 @@ final class DomainController
             $currentSp = PolicyLevel::extractSubdomainPolicy($target) ?? 'reject';
 
             $policyEditCard = '<div class="card">'
-                . '<h2>Edit target policy</h2>'
+                . '<h2>Edit target policy' . View::helpTooltip('card-edit-target-policy', 'What this form does') . '</h2>'
                 . '<form method="post" action="/domain/policy">'
                 . View::csrfField($csrf) . $domainField
                 . '<div class="field"><label for="target_p">p (domain policy)</label>'
@@ -889,7 +889,8 @@ final class DomainController
                 . '</form></div>';
         }
 
-        $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days</h2>'
+        $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days'
+            . View::helpTooltip('card-pass-fail-chart', 'What this chart shows') . '</h2>'
             . SvgBarChart::render($trend) . '</div>';
 
         $authRecordCard = '';
@@ -897,7 +898,7 @@ final class DomainController
 
         if ($authRecord !== null) {
             $authRecordCard = '<div class="card">'
-                . '<h2>Cross-domain report authorization</h2>'
+                . '<h2>Cross-domain report authorization' . View::helpTooltip('hc-report-auth', 'What this record does') . '</h2>'
                 . '<p class="card-sub">Add this TXT record so receivers accept DMARC reports for this domain (spec §11.2):</p>'
                 . '<code class="rec-evidence">' . View::e($authRecord['name']) . '  IN TXT  &quot;' . View::e($authRecord['value']) . '&quot;</code>'
                 . '</div>';
@@ -947,8 +948,10 @@ final class DomainController
 
     private function renderHealthCheck(?HealthCheckSummary $health): string
     {
+        $sectionTitle = '<h2>Health check' . View::helpTooltip('card-health-check', 'What this section shows') . '</h2>';
+
         if ($health === null) {
-            return '<div class="section-head"><h2>Health check</h2></div><p class="card-sub">No health check has been run yet.</p>';
+            return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No health check has been run yet.</p>';
         }
 
         $items = '';
@@ -963,7 +966,7 @@ final class DomainController
                 . '</div>';
         }
 
-        return '<div class="section-head"><h2>Health check</h2>'
+        return '<div class="section-head">' . $sectionTitle
             . '<span class="sub">Last run ' . View::e($health->runAt) . ' (' . View::e($health->trigger) . ')</span></div>'
             . '<div class="health-grid">' . $items . '</div>';
     }
@@ -1049,7 +1052,7 @@ final class DomainController
             );
         }
 
-        return '<div class="section-head"><h2>Sources</h2><div class="table-filters">' . $filterLinks . '</div></div>'
+        return '<div class="section-head"><h2>Sources' . View::helpTooltip('card-sources', 'What this table shows') . '</h2><div class="table-filters">' . $filterLinks . '</div></div>'
             . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
             . '<th>' . $sortLink('ip', 'IP') . '</th><th>rDNS</th><th>ASN org</th>'
             . '<th>' . $sortLink('label', 'Label') . View::helpTooltip('known-vs-unknown', 'What known/unknown labels mean') . '</th>'
@@ -1071,8 +1074,10 @@ final class DomainController
     /** @param list<RecommendationRow> $rows */
     private function renderRecommendations(array $rows): string
     {
+        $sectionTitle = '<h2>Recommendations' . View::helpTooltip('card-recommendations', 'What this section shows') . '</h2>';
+
         if ($rows === []) {
-            return '<div class="section-head"><h2>Recommendations</h2></div><p class="card-sub">No open recommendations.</p>';
+            return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No open recommendations.</p>';
         }
 
         $items = '';
@@ -1090,7 +1095,7 @@ final class DomainController
                 . '</div>';
         }
 
-        return '<div class="section-head"><h2>Recommendations</h2></div><div class="rec-list">' . $items . '</div>';
+        return '<div class="section-head">' . $sectionTitle . '</div><div class="rec-list">' . $items . '</div>';
     }
 
     private function severityVariant(string $severity): string
@@ -1124,7 +1129,7 @@ final class DomainController
             );
         }
 
-        return '<div class="section-head"><h2>Recent reports</h2></div>'
+        return '<div class="section-head"><h2>Recent reports' . View::helpTooltip('card-recent-reports', 'What this section shows') . '</h2></div>'
             . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
             . '<th>Reporter</th><th>Period start</th><th>Period end</th><th>Records</th><th></th>'
             . '</tr></thead><tbody>' . ($rows !== '' ? $rows : '<tr><td colspan="5" class="empty">No reports yet.</td></tr>') . '</tbody></table></div></div>';

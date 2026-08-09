@@ -49,6 +49,7 @@ final class HelpRepository
             $dir . 'policy.php',
             $dir . 'general.php',
             $dir . 'pages.php',
+            $dir . 'sections.php',
         ];
     }
 

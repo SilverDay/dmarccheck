@@ -64,4 +64,21 @@ final class HelpCatalogCompletenessTest extends TestCase
             self::assertNotNull($this->repo->get($page), "Missing help article for \"{$page}\"");
         }
     }
+
+    /** Every card/section-head View::helpTooltip() call site in DomainController needs a matching article. */
+    public function testEverySectionGuideReferencedFromAControllerHasAnArticle(): void
+    {
+        foreach ([
+            'card-policy',
+            'card-edit-target-policy',
+            'card-pass-fail-chart',
+            'hc-report-auth',
+            'card-health-check',
+            'card-sources',
+            'card-recommendations',
+            'card-recent-reports',
+        ] as $section) {
+            self::assertNotNull($this->repo->get($section), "Missing help article for \"{$section}\"");
+        }
+    }
 }
