@@ -9,6 +9,11 @@ use App\Auth\AuthUser;
 use App\Auth\Roles;
 use App\Auth\StepUp;
 use App\Config;
+use App\HealthCheck\Fix\DmarcFixSuggester;
+use App\HealthCheck\Fix\HealthCheckFix;
+use App\HealthCheck\Fix\MtaStsFixSuggester;
+use App\HealthCheck\Fix\SpfFixSuggester;
+use App\HealthCheck\Fix\TlsRptFixSuggester;
 use App\HealthCheck\HealthCheckItemResult;
 use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
@@ -915,7 +920,7 @@ final class DomainController
             . '<div class="overview-col">' . $policyCard . $policyEditCard . '</div>'
             . '<div class="overview-col">' . $chartCard . $authRecordCard . '</div>'
             . '</div>'
-            . $this->renderHealthCheck($health)
+            . $this->renderHealthCheck($health, (string) $domain['domain'], $mailFrom)
             . ($statusForm !== '' ? '<script src="/assets/webauthn.js"></script>' : '');
     }
 
@@ -951,12 +956,24 @@ final class DomainController
         return $html;
     }
 
-    private function renderHealthCheck(?HealthCheckSummary $health): string
+    private function renderHealthCheck(?HealthCheckSummary $health, string $domain, string $mailFrom): string
     {
         $sectionTitle = '<h2>Health check' . View::helpTooltip('card-health-check', 'What this section shows') . '</h2>';
 
         if ($health === null) {
             return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No health check has been run yet.</p>';
+        }
+
+        $mxHosts = [];
+
+        foreach ($health->items as $item) {
+            if ($item->checkName === 'mx' && isset($item->detail['hosts']) && \is_array($item->detail['hosts'])) {
+                foreach ($item->detail['hosts'] as $mx) {
+                    if (\is_array($mx) && isset($mx['host']) && \is_string($mx['host'])) {
+                        $mxHosts[] = $mx['host'];
+                    }
+                }
+            }
         }
 
         $items = '';
@@ -970,6 +987,7 @@ final class DomainController
                 . ($helpSlug !== null ? View::helpTooltip($helpSlug, 'What the ' . $item->checkName . ' check does') : '')
                 . '<span class="health-category">' . View::e($item->category) . '</span>'
                 . ($reason !== null ? '<span class="health-reason">' . View::e($reason) . '</span>' : '')
+                . $this->renderFixBlocks($this->suggestFix($item->checkName, $item->detail, $domain, $mailFrom, $mxHosts))
                 . '</div>';
         }
 
@@ -1014,6 +1032,57 @@ final class DomainController
             'report_destination_auth' => 'hc-report-auth',
             default                   => null,
         };
+    }
+
+    /**
+     * Dispatches to the matching src/HealthCheck/Fix/*Suggester for a
+     * mechanically-generatable DNS fix — generation/copy only, never
+     * applied to any nameserver. Most checkNames have no deterministic fix
+     * (blocklist listings, cert problems, etc.) and return [] here.
+     *
+     * @param array<string, mixed> $detail
+     * @param list<string> $mxHosts
+     *
+     * @return list<HealthCheckFix>
+     */
+    private function suggestFix(string $checkName, array $detail, string $domain, string $mailFrom, array $mxHosts): array
+    {
+        return match ($checkName) {
+            'spf'     => SpfFixSuggester::suggest($domain, $detail),
+            'dmarc'   => DmarcFixSuggester::suggest($domain, $detail, $mailFrom),
+            'tls_rpt' => TlsRptFixSuggester::suggest($domain, $detail, $mailFrom),
+            'mta_sts' => MtaStsFixSuggester::suggest($domain, $detail, $mxHosts),
+            default   => [],
+        };
+    }
+
+    /** @param list<HealthCheckFix> $fixes */
+    private function renderFixBlocks(array $fixes): string
+    {
+        if ($fixes === []) {
+            return '';
+        }
+
+        $html = '';
+
+        foreach ($fixes as $fix) {
+            // &#10; not a raw \n — a literal newline inside an HTML attribute
+            // value has inconsistent cross-browser normalization; the numeric
+            // character reference is unambiguously decoded back to LF when
+            // JS reads button.dataset.copyValue, matters for the multi-line
+            // MTA-STS policy-file fix.
+            $copyValue = str_replace("\n", '&#10;', View::e($fix->recordValue));
+
+            $html .= '<div class="fix-block">'
+                . '<div class="fix-label">' . View::e($fix->label) . '</div>'
+                . '<code class="rec-evidence">' . View::e($fix->recordName) . '  ' . View::e($fix->recordType)
+                . '  &quot;' . View::e($fix->recordValue) . '&quot;</code>'
+                . '<p class="card-sub">' . View::e($fix->note) . '</p>'
+                . '<button type="button" class="btn btn-secondary btn-sm copy-btn" data-copy-value="' . $copyValue . '">Copy</button>'
+                . '</div>';
+        }
+
+        return $html;
     }
 
     /** @param list<array<string, mixed>> $rows */

@@ -311,6 +311,14 @@ td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px;
 .health-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
 .health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-left: auto; }
 .health-reason { flex-basis: 100%; font-size: 11px; color: var(--color-fg-muted); }
+.fix-block {
+  flex-basis: 100%; margin-top: 6px; padding: 10px; border: 1px solid var(--color-border);
+  border-radius: 6px; background: var(--color-surface);
+}
+.fix-label { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+.fix-block .rec-evidence { display: block; margin: 6px 0; }
+.fix-block .card-sub { margin: 0 0 8px; }
+.copy-btn { min-width: 64px; }
 
 .posture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
 .posture-card { display: flex; flex-direction: column; gap: 8px; }

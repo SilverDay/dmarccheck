@@ -115,5 +115,23 @@
         // same as most native browser tooltips do.
         window.addEventListener('scroll', closePopover, true);
         window.addEventListener('resize', closePopover);
+
+        document.querySelectorAll('.copy-btn').forEach(function (button) {
+            var originalLabel = button.textContent;
+
+            button.addEventListener('click', function () {
+                var value = button.dataset.copyValue || '';
+
+                navigator.clipboard.writeText(value).then(function () {
+                    button.textContent = 'Copied!';
+                }, function () {
+                    button.textContent = 'Copy failed';
+                }).finally(function () {
+                    setTimeout(function () {
+                        button.textContent = originalLabel;
+                    }, 2000);
+                });
+            });
+        });
     });
 })();
