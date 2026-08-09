@@ -365,15 +365,18 @@ final class SecurityController
         $this->webauthnStore->updateSignCount($updated->publicKeyCredentialId, $updated->counter);
         $this->sealed->setCookie(self::CEREMONY_COOKIE, StepUp::PURPOSE_OK, ['user_id' => $user->id]);
 
-        $returnTo = isset($_POST['return_to']) ? (string) $_POST['return_to'] : null;
-        $this->json(['ok' => true, 'redirect' => StepUp::sanitizeReturnTo($returnTo)]);
+        // No redirect: the caller is webauthn.js's data-step-up-passkey handler,
+        // which resubmits the actor's original guarded form itself rather than
+        // navigating anywhere (see StepUp::formAttr()).
+        $this->json(['ok' => true]);
     }
 
 
     private function renderPage(AuthUser $user, ?string $flash = null, ?string $error = null): void
     {
         $csrf        = $this->auth->csrfToken();
-        $stepUpField = $this->stepUp->fieldHtml($user, '/account/security');
+        $stepUpAttr  = $this->stepUp->formAttr($user);
+        $stepUpField = $this->stepUp->fieldHtml($user);
 
         $body = '<div class="page-head"><div><h1>Security settings</h1><div class="sub">' . View::e($user->email) . '</div></div></div>';
 
@@ -410,9 +413,9 @@ final class SecurityController
             $body .= '<p class="card-sub">' . View::badge('success', 'Enabled') . '</p>'
                 . '<div class="list-row"><div class="meta">' . View::icon('key')
                 . '<div><div class="name">Recovery codes</div><div class="detail">Regenerate if you\'re running low</div></div></div>'
-                . '<form method="post" action="/account/recovery-codes/regenerate">' . View::csrfField($csrf) . $stepUpField
+                . '<form method="post" action="/account/recovery-codes/regenerate"' . $stepUpAttr . '>' . View::csrfField($csrf) . $stepUpField
                 . '<button type="submit" class="btn btn-secondary btn-sm">Regenerate</button></form></div>'
-                . '<form method="post" action="/account/totp/remove" class="mt-md">'
+                . '<form method="post" action="/account/totp/remove" class="mt-md"' . $stepUpAttr . '>'
                 . View::csrfField($csrf) . $stepUpField
                 . '<button type="submit" class="btn btn-danger">' . View::icon('trash') . 'Remove password sign-in</button></form>';
         } else {
@@ -431,17 +434,18 @@ final class SecurityController
             $body .= '<div class="list-row"><div class="meta">' . View::icon('key')
                 . '<div><div class="name">' . View::e((string) ($c['label'] ?? 'Passkey')) . '</div>'
                 . '<div class="detail">Added ' . View::e($c['created_at']) . '</div></div></div>'
-                . '<form method="post" action="/account/passkeys/remove">'
+                . '<form method="post" action="/account/passkeys/remove"' . $stepUpAttr . '>'
                 . View::csrfField($csrf) . $stepUpField
                 . '<input type="hidden" name="credential_id" value="' . (int) $c['id'] . '">'
                 . '<button type="submit" class="btn btn-danger btn-sm">' . View::icon('trash') . 'Remove</button></form></div>';
         }
 
         $body .= '<form onsubmit="return false" class="mt-md">'
-            . View::csrfField($csrf) . $stepUpField
+            . View::csrfField($csrf)
+            . ($user->hasPassword() ? $stepUpField : '')
             . '<div class="field"><label for="passkey_label">Passkey name (optional)</label>'
             . '<input type="text" id="passkey_label" name="passkey_label" placeholder="e.g. Laptop"></div>'
-            . '<button type="button" class="btn btn-secondary" data-webauthn="register"'
+            . '<button type="button" class="btn btn-secondary" data-webauthn="register"' . $stepUpAttr
             . ' data-options-url="/account/passkeys/register/options" data-verify-url="/account/passkeys/register/verify"'
             . ' data-error-target="#webauthn-error-register">'
             . View::icon('key') . 'Add a passkey</button>'
@@ -457,9 +461,9 @@ final class SecurityController
     {
         $csrf = $this->auth->csrfToken();
 
-        return '<form method="post" action="/account/totp/confirm">'
+        return '<form method="post" action="/account/totp/confirm"' . $this->stepUp->formAttr($user) . '>'
             . View::csrfField($csrf)
-            . $this->stepUp->fieldHtml($user, '/account/security')
+            . $this->stepUp->fieldHtml($user)
             . '<div class="field"><label for="code">6-digit code</label>'
             . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></div>'
             . '<button type="submit" class="btn btn-primary btn-block">Confirm</button>'

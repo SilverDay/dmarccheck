@@ -306,11 +306,12 @@ final class AdminUsersController
     private function renderList(AuthUser $actor, ?string $flash = null, ?string $error = null): void
     {
         $csrf        = $this->auth->csrfToken();
-        $stepUpField = $this->stepUp->fieldHtml($actor, '/admin/users');
+        $stepUpAttr  = $this->stepUp->formAttr($actor);
+        $stepUpField = $this->stepUp->fieldHtml($actor);
         $users       = $this->users->all();
 
-        $rows = implode('', array_map(function (AuthUser $u) use ($actor, $csrf, $stepUpField): string {
-            return $this->userRow($u, $actor, $csrf, $stepUpField);
+        $rows = implode('', array_map(function (AuthUser $u) use ($actor, $csrf, $stepUpAttr, $stepUpField): string {
+            return $this->userRow($u, $actor, $csrf, $stepUpAttr, $stepUpField);
         }, $users));
 
         $body = '<div class="page-head"><div><h1>Users</h1>'
@@ -326,7 +327,7 @@ final class AdminUsersController
 
         $body .= '<div class="narrow narrow-tight"><div class="card">'
             . '<h2>Invite a user</h2>'
-            . '<form method="post" action="/admin/users/invite">'
+            . '<form method="post" action="/admin/users/invite"' . $stepUpAttr . '>'
             . View::csrfField($csrf) . $stepUpField
             . '<div class="field"><label for="email">Email</label><input type="email" id="email" name="email" required></div>'
             . '<div class="field"><label for="role">Role</label><select id="role" name="role" class="role-select block">'
@@ -344,43 +345,44 @@ final class AdminUsersController
         View::render('Users', $body, $actor, $csrf, $flash);
     }
 
-    private function userRow(AuthUser $u, AuthUser $actor, ?string $csrf, string $stepUpField): string
+    private function userRow(AuthUser $u, AuthUser $actor, ?string $csrf, string $stepUpAttr, string $stepUpField): string
     {
         $idField   = '<input type="hidden" name="user_id" value="' . $u->id . '">';
         $csrfField = View::csrfField($csrf);
         $actions   = [];
 
         if ($u->status === 'invited') {
-            $actions[] = $this->actionForm('/admin/users/reinvite', 'Re-invite', $idField, $csrfField, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/reinvite', 'Re-invite', $idField, $csrfField, $stepUpAttr, $stepUpField);
         }
 
         if ($u->status === 'active') {
-            $actions[] = $this->actionForm('/admin/users/password-reset', 'Send password reset', $idField, $csrfField, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/password-reset', 'Send password reset', $idField, $csrfField, $stepUpAttr, $stepUpField);
             $actions[] = $this->actionForm(
                 '/admin/users/reset-mfa',
                 'Reset MFA',
                 $idField,
                 $csrfField,
+                $stepUpAttr,
                 $stepUpField
                     . '<label class="inline-check-label">'
                     . '<input type="checkbox" name="identity_verified" value="1" required> Identity verified out-of-band</label>'
                     . '<input type="text" name="reason" placeholder="Reason (required)" required class="input-inline">'
             );
-            $actions[] = $this->actionForm('/admin/users/revoke-sessions', 'Force logout', $idField, $csrfField, $stepUpField);
-            $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpField, danger: true);
+            $actions[] = $this->actionForm('/admin/users/revoke-sessions', 'Force logout', $idField, $csrfField, $stepUpAttr, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/disable', 'Disable', $idField, $csrfField, $stepUpAttr, $stepUpField, danger: true);
         }
 
         if ($u->status === 'disabled') {
-            $actions[] = $this->actionForm('/admin/users/enable', 'Re-enable', $idField, $csrfField, $stepUpField);
+            $actions[] = $this->actionForm('/admin/users/enable', 'Re-enable', $idField, $csrfField, $stepUpAttr, $stepUpField);
         }
 
         if ($u->id !== $actor->id) {
-            $actions[] = $this->actionForm('/admin/users/delete', 'Delete', $idField, $csrfField, $stepUpField, danger: true);
+            $actions[] = $this->actionForm('/admin/users/delete', 'Delete', $idField, $csrfField, $stepUpAttr, $stepUpField, danger: true);
         } else {
             $actions[] = '<button class="btn btn-secondary btn-sm" disabled>You</button>';
         }
 
-        $roleForm = '<form method="post" action="/admin/users/role">'
+        $roleForm = '<form method="post" action="/admin/users/role"' . $stepUpAttr . '>'
             . $idField . $csrfField . $stepUpField
             . '<select name="role" class="role-select">'
             . '<option value="' . Roles::READ_ONLY . '"' . ($u->role === Roles::READ_ONLY ? ' selected' : '') . '>Read-only</option>'
@@ -406,10 +408,11 @@ final class AdminUsersController
         string $label,
         string $idField,
         string $csrfField,
+        string $stepUpAttr,
         string $stepUpField,
         bool $danger = false,
     ): string {
-        return '<form method="post" action="' . View::e($action) . '" class="inline-form">'
+        return '<form method="post" action="' . View::e($action) . '" class="inline-form"' . $stepUpAttr . '>'
             . $idField . $csrfField . $stepUpField
             . '<button type="submit" class="btn btn-sm ' . ($danger ? 'btn-danger' : 'btn-secondary') . '">' . View::e($label) . '</button></form>';
     }

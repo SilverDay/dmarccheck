@@ -4,30 +4,36 @@ declare(strict_types=1);
 
 namespace App\Tests\Auth;
 
+use App\Auth\AuthUser;
+use App\Auth\PasswordHasher;
+use App\Auth\SealedCookie;
 use App\Auth\StepUp;
 use PHPUnit\Framework\TestCase;
 
 final class StepUpTest extends TestCase
 {
-    public function testAcceptsSameOriginRelativePaths(): void
+    public function testFormAttrMarksPasskeyOnlyActorsForTransparentSubmitTimeCeremony(): void
     {
-        self::assertSame('/domain?domain=example.com', StepUp::sanitizeReturnTo('/domain?domain=example.com'));
-        self::assertSame('/admin/users', StepUp::sanitizeReturnTo('/admin/users'));
-        self::assertSame('/', StepUp::sanitizeReturnTo('/'));
+        $stepUp = new StepUp(new PasswordHasher(), new SealedCookie('secret', true));
+
+        self::assertSame(' data-step-up-passkey', $stepUp->formAttr($this->makeUser(credentialHash: null)));
+        self::assertSame('', $stepUp->formAttr($this->makeUser(credentialHash: 'hash')));
     }
 
-    public function testFallsBackToSlashWhenMissing(): void
+    public function testFieldHtmlGivesPasswordActorsAnInlinePasswordFieldAndPasskeyActorsAnErrorSlotOnly(): void
     {
-        self::assertSame('/', StepUp::sanitizeReturnTo(null));
-        self::assertSame('/', StepUp::sanitizeReturnTo(''));
+        $stepUp = new StepUp(new PasswordHasher(), new SealedCookie('secret', true));
+
+        $passkeyOnly = $stepUp->fieldHtml($this->makeUser(credentialHash: null));
+        self::assertStringNotContainsString('<input type="password"', $passkeyOnly);
+        self::assertStringContainsString('step-up-error', $passkeyOnly);
+
+        $passwordActor = $stepUp->fieldHtml($this->makeUser(credentialHash: 'hash'));
+        self::assertStringContainsString('<input type="password" name="current_password" required>', $passwordActor);
     }
 
-    public function testRejectsOpenRedirectPayloads(): void
+    private function makeUser(?string $credentialHash): AuthUser
     {
-        self::assertSame('/', StepUp::sanitizeReturnTo('//evil.example/phish'));
-        self::assertSame('/', StepUp::sanitizeReturnTo('https://evil.example/'));
-        self::assertSame('/', StepUp::sanitizeReturnTo('http://evil.example/'));
-        self::assertSame('/', StepUp::sanitizeReturnTo('javascript:alert(1)'));
-        self::assertSame('/', StepUp::sanitizeReturnTo('not-a-path'));
+        return new AuthUser(1, 'user@example.com', $credentialHash, null, 'admin', 'active', new \DateTimeImmutable(), null);
     }
 }

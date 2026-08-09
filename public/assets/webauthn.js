@@ -109,19 +109,88 @@
         });
     });
 
-    // An explicit data-error-target wins (unique per page: login, add-passkey,
-    // etc). Otherwise, for a button repeated many times on one page (e.g. a
-    // step-up "Verify with passkey" button next to every row action on the
-    // Users list), scope to the *clicked* button's own .step-up-field so each
-    // instance gets its own error slot instead of every click racing to write
-    // into whichever one happens to be first in the DOM.
     function resolveErrorTarget(button) {
-        if (button.dataset.errorTarget) {
-            return document.querySelector(button.dataset.errorTarget);
-        }
-        const scope = button.closest('.step-up-field');
-        return (scope && scope.querySelector('.step-up-error')) || document.querySelector('#webauthn-error');
+        return document.querySelector(button.dataset.errorTarget || '#webauthn-error');
     }
+
+    /*
+     * Step-up re-verification (spec §15.4/§15.5), used two ways:
+     *
+     * 1. A <form data-step-up-passkey ...> whose action needs step-up: the
+     *    submit is intercepted, the ceremony runs against
+     *    /account/stepup/passkey/*, and only on success is the *same* form
+     *    resubmitted natively — so the actor sees one native passkey prompt
+     *    at the moment they take the action, then the normal server
+     *    response (redirect + flash message) for that action, never a
+     *    detour through a separate "verify first" page or step.
+     * 2. A [data-webauthn] button that ALSO carries data-step-up-passkey
+     *    (only "Add a passkey": creating a second credential is itself
+     *    step-up-gated, spec §15.5) — runCeremony() below runs this first,
+     *    before its own register/authenticate ceremony, composing two
+     *    native prompts back to back.
+     */
+    async function runStepUpCeremony() {
+        const csrfInput = document.querySelector('[name="csrf_token"]');
+        const csrfFields = csrfInput ? { csrf_token: csrfInput.value } : {};
+
+        const optionsResp = await fetch('/account/stepup/passkey/options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(csrfFields),
+            credentials: 'same-origin',
+        });
+
+        if (!optionsResp.ok) {
+            throw new Error('Could not start passkey verification.');
+        }
+
+        const optionsJson = await optionsResp.text();
+        const credentialJson = await authenticate(optionsJson);
+
+        const verifyBody = new URLSearchParams(csrfFields);
+        verifyBody.set('credential', credentialJson);
+
+        const verifyResp = await fetch('/account/stepup/passkey/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: verifyBody,
+            credentials: 'same-origin',
+        });
+        const verifyJson = await verifyResp.json();
+
+        if (!verifyResp.ok || !verifyJson.ok) {
+            throw new Error(verifyJson.error || 'Passkey verification failed.');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('form[data-step-up-passkey]').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                const errorEl = form.querySelector('.step-up-error');
+                if (errorEl) {
+                    errorEl.textContent = '';
+                }
+
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+
+                runStepUpCeremony().then(function () {
+                    form.submit();
+                }).catch(function (err) {
+                    if (errorEl) {
+                        errorEl.textContent = err.message || String(err);
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                    }
+                });
+            });
+        });
+    });
 
     async function runCeremony(button) {
         const errorEl = resolveErrorTarget(button);
@@ -131,6 +200,10 @@
         button.disabled = true;
 
         try {
+            if (button.hasAttribute('data-step-up-passkey')) {
+                await runStepUpCeremony();
+            }
+
             const fieldNames = (button.dataset.extraFields || '').split(',').map(function (s) {
                 return s.trim();
             }).filter(Boolean);
