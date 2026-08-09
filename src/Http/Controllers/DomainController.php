@@ -123,7 +123,7 @@ final class DomainController
             return;
         }
 
-        $this->pdo->prepare('UPDATE domains SET approved_baseline_policy = ? WHERE id = ?')
+        $this->pdo->prepare('UPDATE domains SET approved_baseline_policy = ?, baseline_approved_at = NOW() WHERE id = ?')
             ->execute([$policy, (int) $domain['id']]);
 
         $this->audit->record($actor->id, 'domain.baseline_approved', (string) $domain['domain'], ['policy' => $policy], $this->clientIp());
