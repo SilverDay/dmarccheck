@@ -306,7 +306,7 @@ final class AdminUsersController
     private function renderList(AuthUser $actor, ?string $flash = null, ?string $error = null): void
     {
         $csrf        = $this->auth->csrfToken();
-        $stepUpField = $this->stepUp->fieldHtml($actor);
+        $stepUpField = $this->stepUp->fieldHtml($actor, '/admin/users');
         $users       = $this->users->all();
 
         $rows = implode('', array_map(function (AuthUser $u) use ($actor, $csrf, $stepUpField): string {
@@ -336,6 +336,10 @@ final class AdminUsersController
             . '</select></div>'
             . '<button type="submit" class="btn btn-primary btn-block">' . View::icon('mail') . 'Send invitation</button>'
             . '</form></div></div>';
+
+        if (!$actor->hasPassword()) {
+            $body .= '<script src="/assets/webauthn.js"></script>';
+        }
 
         View::render('Users', $body, $actor, $csrf, $flash);
     }

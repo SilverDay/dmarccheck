@@ -100,7 +100,7 @@
             button.addEventListener('click', function (event) {
                 event.preventDefault();
                 runCeremony(button).catch(function (err) {
-                    const errorEl = document.querySelector(button.dataset.errorTarget || '#webauthn-error');
+                    const errorEl = resolveErrorTarget(button);
                     if (errorEl) {
                         errorEl.textContent = err.message || String(err);
                     }
@@ -109,8 +109,22 @@
         });
     });
 
+    // An explicit data-error-target wins (unique per page: login, add-passkey,
+    // etc). Otherwise, for a button repeated many times on one page (e.g. a
+    // step-up "Verify with passkey" button next to every row action on the
+    // Users list), scope to the *clicked* button's own .step-up-field so each
+    // instance gets its own error slot instead of every click racing to write
+    // into whichever one happens to be first in the DOM.
+    function resolveErrorTarget(button) {
+        if (button.dataset.errorTarget) {
+            return document.querySelector(button.dataset.errorTarget);
+        }
+        const scope = button.closest('.step-up-field');
+        return (scope && scope.querySelector('.step-up-error')) || document.querySelector('#webauthn-error');
+    }
+
     async function runCeremony(button) {
-        const errorEl = document.querySelector(button.dataset.errorTarget || '#webauthn-error');
+        const errorEl = resolveErrorTarget(button);
         if (errorEl) {
             errorEl.textContent = '';
         }

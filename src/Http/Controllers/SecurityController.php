@@ -109,7 +109,7 @@ final class SecurityController
             . '<p class="card-sub">Scan or enter this manually in an authenticator app (e.g. Google Authenticator, 1Password).</p>'
             . '<p class="secret secret-block">' . View::e($totpData['secret']) . '</p>'
             . $this->confirmTotpForm($user)
-            . '</div></div>';
+            . '</div></div><script src="/assets/webauthn.js"></script>';
 
         View::render('Set up authenticator', $body, $user, $this->auth->csrfToken());
     }
@@ -169,7 +169,7 @@ final class SecurityController
             . '<h2>Set up an authenticator app</h2>'
             . '<p class="error">' . View::e($error) . '</p>'
             . $this->confirmTotpForm($user)
-            . '</div></div>';
+            . '</div></div><script src="/assets/webauthn.js"></script>';
         View::render('Set up authenticator', $body, $user, $this->auth->csrfToken());
     }
 
@@ -365,14 +365,15 @@ final class SecurityController
         $this->webauthnStore->updateSignCount($updated->publicKeyCredentialId, $updated->counter);
         $this->sealed->setCookie(self::CEREMONY_COOKIE, StepUp::PURPOSE_OK, ['user_id' => $user->id]);
 
-        $this->json(['ok' => true, 'redirect' => '/account/security']);
+        $returnTo = isset($_POST['return_to']) ? (string) $_POST['return_to'] : null;
+        $this->json(['ok' => true, 'redirect' => StepUp::sanitizeReturnTo($returnTo)]);
     }
 
 
     private function renderPage(AuthUser $user, ?string $flash = null, ?string $error = null): void
     {
         $csrf        = $this->auth->csrfToken();
-        $stepUpField = $this->stepUp->fieldHtml($user);
+        $stepUpField = $this->stepUp->fieldHtml($user, '/account/security');
 
         $body = '<div class="page-head"><div><h1>Security settings</h1><div class="sub">' . View::e($user->email) . '</div></div></div>';
 
@@ -447,18 +448,6 @@ final class SecurityController
             . '<p id="webauthn-error-register" class="error"></p>'
             . '</form></div>';
 
-        if (!$user->hasPassword()) {
-            $body .= '<div class="card"><h2>Re-verify</h2>'
-                . '<p class="card-sub">Passkey-only accounts re-verify with a passkey before a sensitive change — verify here, then retry the action below.</p>'
-                . '<form onsubmit="return false">' . View::csrfField($csrf)
-                . '<button type="button" class="btn btn-secondary" data-webauthn="authenticate"'
-                . ' data-options-url="/account/stepup/passkey/options" data-verify-url="/account/stepup/passkey/verify"'
-                . ' data-error-target="#webauthn-error-stepup">'
-                . View::icon('key') . 'Verify with passkey</button>'
-                . '<p id="webauthn-error-stepup" class="error"></p>'
-                . '</form></div>';
-        }
-
         $body .= '</div><script src="/assets/webauthn.js"></script>';
 
         View::render('Security settings', $body, $user, $csrf, $flash);
@@ -470,7 +459,7 @@ final class SecurityController
 
         return '<form method="post" action="/account/totp/confirm">'
             . View::csrfField($csrf)
-            . $this->stepUp->fieldHtml($user)
+            . $this->stepUp->fieldHtml($user, '/account/security')
             . '<div class="field"><label for="code">6-digit code</label>'
             . '<input type="text" id="code" name="code" required autofocus autocomplete="one-time-code"></div>'
             . '<button type="submit" class="btn btn-primary btn-block">Confirm</button>'

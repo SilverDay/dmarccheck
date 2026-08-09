@@ -833,16 +833,17 @@ final class DomainController
         $active      = (int) $domain['active'] === 1;
         $csrf        = $this->auth->csrfToken();
         $domainField = '<input type="hidden" name="domain" value="' . View::e((string) $domain['domain']) . '">';
+        $domainUrl   = '/domain?' . http_build_query(['domain' => $domain['domain']]);
 
         $statusForm = '';
 
         if (Roles::atLeast($user->role, Roles::SUPER_ADMIN)) {
             $statusForm = $active
                 ? '<form method="post" action="/domain/deactivate" class="inline-form">'
-                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user)
+                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user, $domainUrl)
                     . '<button type="submit" class="btn btn-danger btn-sm">Deactivate</button></form>'
                 : '<form method="post" action="/domain/reactivate" class="inline-form">'
-                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user)
+                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user, $domainUrl)
                     . '<button type="submit" class="btn btn-secondary btn-sm">Reactivate</button></form>';
         }
 
@@ -903,7 +904,8 @@ final class DomainController
             . '<div class="overview-col">' . $policyCard . $policyEditCard . '</div>'
             . '<div class="overview-col">' . $chartCard . $authRecordCard . '</div>'
             . '</div>'
-            . $this->renderHealthCheck($health);
+            . $this->renderHealthCheck($health)
+            . ($statusForm !== '' ? '<script src="/assets/webauthn.js"></script>' : '');
     }
 
     /**

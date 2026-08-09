@@ -38,13 +38,42 @@ final class StepUp
         return $pending !== null && (int) $pending['user_id'] === $actor->id;
     }
 
-    public function fieldHtml(AuthUser $actor): string
+    /**
+     * $returnTo is where the browser lands after a successful passkey
+     * ceremony (see sanitizeReturnTo()) — the page this field is rendered
+     * on, so re-verifying reloads the actor right back to the pending
+     * action instead of detouring through /account/security.
+     */
+    public function fieldHtml(AuthUser $actor, string $returnTo): string
     {
         if (!$actor->hasPassword()) {
-            return '<p class="step-up-field"><em>Passkey-only account — <a href="/account/security">verify with your passkey</a> first, then retry.</em></p>';
+            return '<p class="step-up-field">'
+                . '<span class="step-up-hint">Passkey-only account —</span>'
+                . '<input type="hidden" name="return_to" value="' . htmlspecialchars($returnTo, ENT_QUOTES, 'UTF-8') . '">'
+                . '<button type="button" class="btn btn-secondary btn-sm" data-webauthn="authenticate"'
+                . ' data-options-url="/account/stepup/passkey/options" data-verify-url="/account/stepup/passkey/verify"'
+                . ' data-extra-fields="return_to">Verify with passkey</button>'
+                . '<span class="step-up-error error"></span>'
+                . '</p>';
         }
 
         return '<p class="step-up-field"><label>Current password'
             . '<input type="password" name="current_password" required></label></p>';
+    }
+
+    /**
+     * Same-origin relative-path allowlist for the passkey ceremony's
+     * post-verify redirect (spec §15.4) — the value round-trips through an
+     * unauthenticated-until-verified POST body, so it must never be able to
+     * send the browser off-site (open redirect) via a "//host" or absolute
+     * URL payload.
+     */
+    public static function sanitizeReturnTo(?string $returnTo): string
+    {
+        if ($returnTo === null || $returnTo === '' || preg_match('#^/(?!/)[A-Za-z0-9\-._~!$&\'()*+,;=:@/%?]*$#', $returnTo) !== 1) {
+            return '/';
+        }
+
+        return $returnTo;
     }
 }
