@@ -13,7 +13,8 @@ return [
         $category,
         'SPF is a DNS TXT record listing which mail servers are allowed to send on behalf of your domain, checked against the envelope sender address.',
         '<p>SPF (Sender Policy Framework, RFC 7208) is a DNS TXT record at your domain\'s root listing the IP addresses/ranges and included third-party services authorized to send mail claiming your domain in the SMTP envelope (<code>MAIL FROM</code>). A receiving server looks up that record and checks whether the connecting IP is on the list.</p>'
-            . '<p>SPF alone does not stop spoofing of the visible <a href="/help/article?slug=header-from">From: header</a> a recipient sees — that\'s what DMARC\'s <a href="/help/article?slug=dmarc-alignment">alignment</a> requirement adds on top.</p>',
+            . '<p>SPF alone does not stop spoofing of the visible <a href="/help/article?slug=header-from">From: header</a> a recipient sees — that\'s what DMARC\'s <a href="/help/article?slug=dmarc-alignment">alignment</a> requirement adds on top.</p>'
+            . '<p><strong>If the health check reports "no SPF record found":</strong> add a TXT record at your domain\'s root listing your legitimate sending sources, ending in an <a href="/help/article?slug=spf-all-qualifier">all qualifier</a>. A minimal starting point for a domain that only sends through its own mail server: <code class="rec-evidence">v=spf1 mx -all</code> — authorizes whatever your MX record points to and hard-fails everything else. Add an <code>include:</code> for each third-party sender (e.g. <code>include:_spf.google.com</code> for Google Workspace), staying mindful of the <a href="/help/article?slug=spf-lookup-limit">10-lookup limit</a>.</p>',
         ['RFC 7208'],
     ),
     new HelpArticle(

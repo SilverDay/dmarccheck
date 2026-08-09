@@ -963,11 +963,13 @@ final class DomainController
 
         foreach ($health->items as $item) {
             $helpSlug = $this->healthCheckHelpSlug($item->checkName);
+            $reason   = isset($item->detail['reason']) ? (string) $item->detail['reason'] : null;
 
             $items .= '<div class="health-item">'
                 . View::badge($this->healthStatusVariant($item->status), $item->checkName)
                 . ($helpSlug !== null ? View::helpTooltip($helpSlug, 'What the ' . $item->checkName . ' check does') : '')
                 . '<span class="health-category">' . View::e($item->category) . '</span>'
+                . ($reason !== null ? '<span class="health-reason">' . View::e($reason) . '</span>' : '')
                 . '</div>';
         }
 
