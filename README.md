@@ -7,9 +7,9 @@ Apache, PDO, front-controller routing, no heavy framework.
 > **Status: scaffold, not a finished application.** See *What's implemented*
 > below for an honest split. Ingestion, enrichment, the domain health check,
 > the R1–R12 recommendation engine, alerting, auth/RBAC, and the dashboard
-> (domain list + per-domain drill-down + domain onboarding/baseline-approval)
-> are built and unit-tested; domain removal and the community-reporting UI
-> are still stubs.
+> (domain list + per-domain drill-down + full domain management: onboarding,
+> baseline approval, policy editing, deactivation/reactivation) are built and
+> unit-tested; only the community-reporting UI is still a stub.
 
 ---
 
@@ -103,20 +103,20 @@ tests/        PHPUnit + fixtures
   results), a sortable/filterable source-IP table, an open-recommendations
   panel, and a raw per-record report-detail view (with an IDOR guard: a
   report_id belonging to a different domain 404s rather than leaking).
-- Domain onboarding + "approve as baseline" (§10.6/§11.1, Admin tier) — the
-  dashboard's first two mutating actions. Onboarding runs the full
-  health-check suite synchronously so there's an immediate policy baseline
-  before a single report exists; approving a baseline copies
-  `current_published_policy` into `approved_baseline_policy` (never
-  silent/automatic), which is what R9 and the alerting policy-drift check
-  actually compare against — both were previously unreachable since nothing
-  could ever set a baseline.
+- Full domain management (§10.6/§11.1/§15.1), split by role tier. Admin:
+  onboarding (runs the full health-check suite synchronously so there's an
+  immediate policy baseline before a single report exists), "approve as
+  baseline" (copies `current_published_policy` into
+  `approved_baseline_policy`, never silent/automatic — what R9 and the
+  alerting policy-drift check actually compare against), and editing
+  `target_policy`/`non_sending` post-onboarding. Super admin, step-up
+  re-authenticated: deactivate/reactivate a domain — a soft `active` flip
+  (not a delete) that removes it from ingestion, health checks, analysis,
+  and alerting while keeping its history intact and browsable.
 
 **Stubs / not yet written:**
 - §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR
   review that hasn't happened; ships disabled either way
-- Domain removal/deactivation, and editing `target_policy`/`non_sending`
-  after onboarding
 
 ---
 

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Auth\AuditLog;
 use App\Auth\AuthUser;
 use App\Auth\Roles;
+use App\Auth\StepUp;
 use App\HealthCheck\HealthCheckItemResult;
 use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
@@ -14,6 +15,7 @@ use App\HealthCheck\HealthCheckSummary;
 use App\Http\AuthMiddleware;
 use App\Http\SvgBarChart;
 use App\Http\View;
+use App\Recommendation\PolicyLevel;
 use App\Recommendation\RecommendationRepository;
 use App\Recommendation\RecommendationRow;
 use App\Support\DomainName;
@@ -23,14 +25,21 @@ use PDO;
 /**
  * Domain list (spec §7.1) and per-domain drill-down (spec §7.2): overview
  * (policy/trend/health-check), source table, recommendations panel, recent
- * reports, a raw per-record report-detail view, and the two Admin-tier
- * mutating actions (spec §15.1: onboard/configure is an Admin capability,
- * not Super Admin — that tier is reserved for user management) — adding a
- * domain (§11.1: runs a health check synchronously so there's an immediate
- * baseline) and approving a domain's current policy as the R9/alerting
- * drift baseline (§10.6: never silent/automatic). The drill-down is
- * addressed by query string (`?domain=`) rather than a path param, since
- * `Router` is exact-string-match only.
+ * reports, a raw per-record report-detail view, and the mutating actions
+ * (spec §15.1) split across two tiers — Admin (onboard/configure: `add()`,
+ * `approveBaseline()`, `updatePolicy()`) and Super Admin (remove: the only
+ * domain-management action reserved above Admin, plus the mirrored
+ * `reactivate()`) — adding a domain (§11.1: runs a health check
+ * synchronously so there's an immediate baseline), approving a domain's
+ * current policy as the R9/alerting drift baseline (§10.6: never
+ * silent/automatic), editing `target_policy`/`non_sending` post-onboarding,
+ * and deactivating/reactivating a domain (§15.3: step-up-gated, a soft
+ * `active` flip rather than a destructive delete so report/health-check
+ * history is retained per §13 — every cron script already filters on
+ * `active = 1`, so deactivation removes a domain from every pipeline, not
+ * just the dashboard). The drill-down is addressed by query string
+ * (`?domain=`) rather than a path param, since `Router` is exact-string-match
+ * only.
  */
 final class DomainController
 {
@@ -45,6 +54,7 @@ final class DomainController
         private readonly HealthCheckRunnerFactory $healthCheckFactory,
         private readonly AuditLog $audit,
         private readonly AuthMiddleware $auth,
+        private readonly StepUp $stepUp,
     ) {
     }
 
@@ -113,6 +123,12 @@ final class DomainController
             return;
         }
 
+        if ((int) $domain['active'] !== 1) {
+            $this->renderDrillDown($actor, $domain, error: 'Reactivate this domain before approving a baseline.');
+
+            return;
+        }
+
         $policy = self::approvableBaseline(
             $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : null
         );
@@ -132,6 +148,106 @@ final class DomainController
         $this->renderDrillDown($actor, $domain, flash: "Approved \"$policy\" as the baseline.");
     }
 
+    public function updatePolicy(AuthUser $actor): void
+    {
+        $domain = $this->findDomain((string) ($_POST['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($actor, 'Domain not found.');
+
+            return;
+        }
+
+        if ((int) $domain['active'] !== 1) {
+            $this->renderDrillDown($actor, $domain, error: 'Reactivate this domain before editing its target policy.');
+
+            return;
+        }
+
+        $targetPolicy = self::composeTargetPolicy(
+            (string) ($_POST['target_p'] ?? ''),
+            (string) ($_POST['target_sp'] ?? ''),
+        );
+
+        if ($targetPolicy === null) {
+            $this->renderDrillDown($actor, $domain, error: 'Choose a valid level (none, quarantine, or reject) for both p and sp.');
+
+            return;
+        }
+
+        $nonSending = isset($_POST['non_sending']) ? 1 : 0;
+
+        $this->pdo->prepare('UPDATE domains SET target_policy = ?, non_sending = ? WHERE id = ?')
+            ->execute([$targetPolicy, $nonSending, (int) $domain['id']]);
+
+        $this->audit->record($actor->id, 'domain.policy_updated', (string) $domain['domain'], [
+            'target_policy' => $targetPolicy,
+            'non_sending'   => $nonSending,
+        ], $this->clientIp());
+
+        $domain['target_policy'] = $targetPolicy;
+        $domain['non_sending']   = $nonSending;
+        $this->renderDrillDown($actor, $domain, flash: "Target policy updated to \"$targetPolicy\".");
+    }
+
+    public function deactivate(AuthUser $actor): void
+    {
+        $domain = $this->findDomain((string) ($_POST['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($actor, 'Domain not found.');
+
+            return;
+        }
+
+        if (!$this->requireStepUp($actor, $domain)) {
+            return;
+        }
+
+        if ((int) $domain['active'] !== 1) {
+            $this->renderDrillDown($actor, $domain, error: 'Domain is already deactivated.');
+
+            return;
+        }
+
+        $this->pdo->prepare('UPDATE domains SET active = 0 WHERE id = ?')->execute([(int) $domain['id']]);
+        $this->audit->record($actor->id, 'domain.deactivated', (string) $domain['domain'], [], $this->clientIp());
+
+        $domain['active'] = 0;
+        $this->renderDrillDown(
+            $actor,
+            $domain,
+            flash: 'Domain deactivated. It no longer appears on the domain list and is excluded from ingestion, health checks, analysis, and alerting.'
+        );
+    }
+
+    public function reactivate(AuthUser $actor): void
+    {
+        $domain = $this->findDomain((string) ($_POST['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($actor, 'Domain not found.');
+
+            return;
+        }
+
+        if (!$this->requireStepUp($actor, $domain)) {
+            return;
+        }
+
+        if ((int) $domain['active'] === 1) {
+            $this->renderDrillDown($actor, $domain, error: 'Domain is already active.');
+
+            return;
+        }
+
+        $this->pdo->prepare('UPDATE domains SET active = 1 WHERE id = ?')->execute([(int) $domain['id']]);
+        $this->audit->record($actor->id, 'domain.reactivated', (string) $domain['domain'], [], $this->clientIp());
+
+        $domain['active'] = 1;
+        $this->renderDrillDown($actor, $domain, flash: 'Domain reactivated.');
+    }
+
     /**
      * The one decision in approveBaseline(): a baseline is only approvable
      * once a published policy has actually been observed — spec §10.6
@@ -140,6 +256,35 @@ final class DomainController
     public static function approvableBaseline(?string $currentPublishedPolicy): ?string
     {
         return $currentPublishedPolicy;
+    }
+
+    /**
+     * The one decision in updatePolicy(): validate+compose the submitted
+     * p/sp levels into the stored target_policy format, or refuse (null)
+     * if either isn't one of PolicyLevel's recognized levels.
+     */
+    public static function composeTargetPolicy(string $p, string $sp): ?string
+    {
+        $p  = strtolower(trim($p));
+        $sp = strtolower(trim($sp));
+
+        if (!PolicyLevel::isValidLevel($p) || !PolicyLevel::isValidLevel($sp)) {
+            return null;
+        }
+
+        return PolicyLevel::compose($p, $sp);
+    }
+
+    /** @param array<string, mixed> $domain */
+    private function requireStepUp(AuthUser $actor, array $domain): bool
+    {
+        if ($this->stepUp->verify($actor)) {
+            return true;
+        }
+
+        $this->renderDrillDown($actor, $domain, error: 'Please re-verify (current password or passkey) to perform this action.');
+
+        return false;
     }
 
     private function clientIp(): ?string
@@ -244,7 +389,12 @@ final class DomainController
         $sort     = (string) ($_GET['sort'] ?? 'volume');
         $label    = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
 
-        $body = ($error !== null ? '<p class="error">' . View::e($error) . '</p>' : '')
+        $notice = (int) $domain['active'] !== 1
+            ? '<p class="error">This domain is deactivated — excluded from ingestion, health checks, analysis, and alerting. Historical data below is retained and still browsable.</p>'
+            : '';
+
+        $body = $notice
+            . ($error !== null ? '<p class="error">' . View::e($error) . '</p>' : '')
             . $this->renderOverview(
                 $user,
                 $domain,
@@ -303,8 +453,8 @@ final class DomainController
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT id, domain, current_published_policy, approved_baseline_policy, target_policy
-               FROM domains WHERE domain = ? AND active = 1'
+            'SELECT id, domain, current_published_policy, approved_baseline_policy, target_policy, non_sending, active
+               FROM domains WHERE domain = ?'
         );
         $stmt->execute([$domain]);
         $row = $stmt->fetch();
@@ -444,25 +594,61 @@ final class DomainController
      */
     private function renderOverview(AuthUser $user, array $domain, array $trend, ?HealthCheckSummary $health): string
     {
-        $current  = $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : 'not yet observed';
-        $baseline = $domain['approved_baseline_policy'] !== null ? (string) $domain['approved_baseline_policy'] : 'none approved';
-        $target   = (string) $domain['target_policy'];
+        $current     = $domain['current_published_policy'] !== null ? (string) $domain['current_published_policy'] : 'not yet observed';
+        $baseline    = $domain['approved_baseline_policy'] !== null ? (string) $domain['approved_baseline_policy'] : 'none approved';
+        $target      = (string) $domain['target_policy'];
+        $active      = (int) $domain['active'] === 1;
+        $csrf        = $this->auth->csrfToken();
+        $domainField = '<input type="hidden" name="domain" value="' . View::e((string) $domain['domain']) . '">';
+
+        $statusForm = '';
+
+        if (Roles::atLeast($user->role, Roles::SUPER_ADMIN)) {
+            $statusForm = $active
+                ? '<form method="post" action="/domain/deactivate" class="inline-form">'
+                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user)
+                    . '<button type="submit" class="btn btn-danger btn-sm">Deactivate</button></form>'
+                : '<form method="post" action="/domain/reactivate" class="inline-form">'
+                    . View::csrfField($csrf) . $domainField . $this->stepUp->fieldHtml($user)
+                    . '<button type="submit" class="btn btn-secondary btn-sm">Reactivate</button></form>';
+        }
 
         $approveForm = '';
 
-        if ($domain['current_published_policy'] !== null && Roles::atLeast($user->role, Roles::ADMIN)) {
+        if ($active && $domain['current_published_policy'] !== null && Roles::atLeast($user->role, Roles::ADMIN)) {
             $approveForm = '<form method="post" action="/domain/approve-baseline" class="inline-form">'
-                . View::csrfField($this->auth->csrfToken())
-                . '<input type="hidden" name="domain" value="' . View::e((string) $domain['domain']) . '">'
+                . View::csrfField($csrf) . $domainField
                 . '<button type="submit" class="btn btn-secondary btn-sm">Approve as baseline</button>'
                 . '</form>';
         }
 
         $policyCard = '<div class="card"><h2>Policy</h2>'
+            . '<div class="policy-row"><span class="policy-label">Status</span>'
+            . View::badge($active ? 'success' : 'neutral', $active ? 'Active' : 'Deactivated') . $statusForm . '</div>'
             . '<div class="policy-row"><span class="policy-label">Published</span><span class="policy-pill">' . View::e($current) . '</span>' . $approveForm . '</div>'
             . '<div class="policy-row"><span class="policy-label">Approved baseline</span><span class="policy-pill">' . View::e($baseline) . '</span></div>'
             . '<div class="policy-row"><span class="policy-label">Target</span><span class="policy-pill">' . View::e($target) . '</span></div>'
             . '</div>';
+
+        $policyEditCard = '';
+
+        if ($active && Roles::atLeast($user->role, Roles::ADMIN)) {
+            $currentP  = PolicyLevel::extract($target)                ?? 'reject';
+            $currentSp = PolicyLevel::extractSubdomainPolicy($target) ?? 'reject';
+
+            $policyEditCard = '<div class="narrow" style="margin-bottom:0;"><div class="card">'
+                . '<h2>Edit target policy</h2>'
+                . '<form method="post" action="/domain/policy">'
+                . View::csrfField($csrf) . $domainField
+                . '<div class="field"><label for="target_p">p (domain policy)</label>'
+                . '<select id="target_p" name="target_p">' . $this->levelOptions($currentP) . '</select></div>'
+                . '<div class="field"><label for="target_sp">sp (subdomain policy)</label>'
+                . '<select id="target_sp" name="target_sp">' . $this->levelOptions($currentSp) . '</select></div>'
+                . '<div class="field"><label><input type="checkbox" name="non_sending" value="1"'
+                . ((int) $domain['non_sending'] === 1 ? ' checked' : '') . '> Non-sending domain (enables R10)</label></div>'
+                . '<button type="submit" class="btn btn-secondary btn-sm">Save</button>'
+                . '</form></div></div>';
+        }
 
         $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days</h2>'
             . SvgBarChart::render($trend) . '</div>';
@@ -470,7 +656,19 @@ final class DomainController
         return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . '</h1>'
             . '<div class="sub"><a href="/">&larr; All domains</a></div></div></div>'
             . '<div class="overview-grid">' . $policyCard . $chartCard . '</div>'
+            . $policyEditCard
             . $this->renderHealthCheck($health);
+    }
+
+    private function levelOptions(string $selected): string
+    {
+        $html = '';
+
+        foreach (['none', 'quarantine', 'reject'] as $level) {
+            $html .= '<option value="' . $level . '"' . ($selected === $level ? ' selected' : '') . '>' . ucfirst($level) . '</option>';
+        }
+
+        return $html;
     }
 
     private function renderHealthCheck(?HealthCheckSummary $health): string

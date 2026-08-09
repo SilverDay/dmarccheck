@@ -102,6 +102,7 @@ $domainController      = new DomainController(
     new HealthCheckRunnerFactory($config, $healthCheckRepository),
     $audit,
     $auth,
+    $stepUp,
 );
 
 $router = new Router();
@@ -164,9 +165,14 @@ $router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));
 $router->get('/domain', $auth->guard(Roles::READ_ONLY, [$domainController, 'show']));
 $router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController, 'reportDetail']));
 
-// --- Domain onboarding / baseline approval (spec §10.6/§11.1 — Admin tier) ---
+// --- Domain onboarding / baseline approval / policy editing (spec §10.6/§11.1/§15.1 — Admin tier) ---
 $router->post('/domains/add', $auth->guardPost(Roles::ADMIN, [$domainController, 'add']));
 $router->post('/domain/approve-baseline', $auth->guardPost(Roles::ADMIN, [$domainController, 'approveBaseline']));
+$router->post('/domain/policy', $auth->guardPost(Roles::ADMIN, [$domainController, 'updatePolicy']));
+
+// --- Domain removal/reactivation (spec §15.1/§15.3 — Super-admin tier, step-up) ---
+$router->post('/domain/deactivate', $auth->guardPost(Roles::SUPER_ADMIN, [$domainController, 'deactivate']));
+$router->post('/domain/reactivate', $auth->guardPost(Roles::SUPER_ADMIN, [$domainController, 'reactivate']));
 
 $router->dispatch(
     $_SERVER['REQUEST_METHOD'] ?? 'GET',

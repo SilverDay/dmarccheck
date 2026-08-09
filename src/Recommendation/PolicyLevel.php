@@ -25,6 +25,16 @@ final class PolicyLevel
         return (self::ORDER[$a] ?? -1) > (self::ORDER[$b] ?? -1);
     }
 
+    public static function isValidLevel(string $value): bool
+    {
+        return \in_array($value, self::VALID, true);
+    }
+
+    public static function compose(string $p, string $sp): string
+    {
+        return "p={$p}; sp={$sp}";
+    }
+
     /** Same normalization the dashboard uses to compare policy strings for equality (public/index.php). */
     public static function normalize(string $policyString): string
     {
