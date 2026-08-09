@@ -221,6 +221,23 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: 11px; display: inline-flex; align-items: center; gap: 4px; margin-right: 6px;
 }
 
+/* ---- help system (docs/feature-helpsystem.md) ---- */
+.help-index-card { padding: 4px 14px; }
+.help-trigger {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  width: 18px; height: 18px; padding: 0; margin-left: 4px; background: none; border: none;
+  border-radius: 50%; cursor: pointer; color: var(--color-fg-muted);
+}
+.help-trigger:hover, .help-trigger:focus-visible { color: var(--color-accent); background: var(--color-surface-muted); }
+.help-trigger svg.icon { width: 14px; height: 14px; }
+.help-popover {
+  display: block; margin: 6px 0; max-width: 320px; white-space: normal;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px;
+  padding: 10px 12px; box-shadow: var(--shadow-md); font-size: 12.5px; color: var(--color-fg);
+}
+.help-popover p { margin: 0 0 8px; }
+.help-popover a { font-size: 12px; font-weight: 600; }
+
 .list-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--color-border); gap: 12px; flex-wrap: wrap; }
 .list-row:last-child { border-bottom: none; }
 .list-row .meta { display: flex; align-items: center; gap: 10px; min-width: 0; }

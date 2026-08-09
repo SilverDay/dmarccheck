@@ -445,7 +445,8 @@ final class DomainController
             $items .= '<div class="rec-item">'
                 . View::badge($this->severityVariant($row->severity), strtoupper($row->severity))
                 . '<span class="mono">' . View::e($entry['domain']) . '</span>'
-                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>' . $subject
+                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>'
+                . View::helpTooltip($this->ruleHelpSlug($row->ruleId), 'What triggers ' . $row->ruleId) . $subject
                 . '<span class="rec-meta">last seen ' . View::e($row->lastSeen) . '</span>'
                 . '</div>';
         }
@@ -550,7 +551,8 @@ final class DomainController
             )
             . $this->renderSourceTable($this->fetchSourceRows($domainId, $sort, $label), (string) $domain['domain'], $sort, $label)
             . $this->renderRecommendations($this->recommendations->forDisplay($domainId))
-            . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain']);
+            . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain'])
+            . '<script src="/assets/help.js"></script>';
 
         View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken(), $flash);
     }
@@ -949,8 +951,11 @@ final class DomainController
         $items = '';
 
         foreach ($health->items as $item) {
+            $helpSlug = $this->healthCheckHelpSlug($item->checkName);
+
             $items .= '<div class="health-item">'
                 . View::badge($this->healthStatusVariant($item->status), $item->checkName)
+                . ($helpSlug !== null ? View::helpTooltip($helpSlug, 'What the ' . $item->checkName . ' check does') : '')
                 . '<span class="health-category">' . View::e($item->category) . '</span>'
                 . '</div>';
         }
@@ -968,6 +973,33 @@ final class DomainController
             HealthCheckItemResult::FAIL => 'danger',
             // info, error — error must never render as a pass (spec §11.3)
             default => 'neutral',
+        };
+    }
+
+    /**
+     * checkName -> src/Help/content/healthcheck.php (or dmarc/spf/dkim.php)
+     * slug. Some checkNames share a topic with an existing fundamentals
+     * article (spf/dkim/dmarc) rather than needing a duplicate hc-* one;
+     * null means no article covers that checkName yet — skip the tooltip
+     * rather than link a dead slug.
+     */
+    private function healthCheckHelpSlug(string $checkName): ?string
+    {
+        return match ($checkName) {
+            'mx', 'mx_resolution'     => 'hc-mx',
+            'spf'                     => 'spf-overview',
+            'dkim'                    => 'dkim-overview',
+            'dmarc'                   => 'dmarc-overview',
+            'dnssec'                  => 'hc-dnssec',
+            'mta_sts'                 => 'hc-mta-sts',
+            'tls_rpt'                 => 'hc-tls-rpt',
+            'bimi'                    => 'hc-bimi',
+            'starttls'                => 'hc-starttls',
+            'dnsbl_zen'               => 'hc-dnsbl',
+            'dnsbl_dbl'               => 'hc-rhsbl',
+            'fcrdns'                  => 'hc-fcrdns',
+            'report_destination_auth' => 'hc-report-auth',
+            default                   => null,
         };
     }
 
@@ -1016,8 +1048,11 @@ final class DomainController
 
         return '<div class="section-head"><h2>Sources</h2><div class="table-filters">' . $filterLinks . '</div></div>'
             . '<div class="table-card"><div class="table-scroll"><table><thead><tr>'
-            . '<th>' . $sortLink('ip', 'IP') . '</th><th>rDNS</th><th>ASN org</th><th>' . $sortLink('label', 'Label') . '</th>'
-            . '<th>' . $sortLink('volume', 'Volume') . '</th><th>' . $sortLink('dkim', 'DKIM pass') . '</th><th>' . $sortLink('spf', 'SPF pass') . '</th>'
+            . '<th>' . $sortLink('ip', 'IP') . '</th><th>rDNS</th><th>ASN org</th>'
+            . '<th>' . $sortLink('label', 'Label') . View::helpTooltip('known-vs-unknown', 'What known/unknown labels mean') . '</th>'
+            . '<th>' . $sortLink('volume', 'Volume') . '</th>'
+            . '<th>' . $sortLink('dkim', 'DKIM pass') . View::helpTooltip('dkim-overview', 'What DKIM pass means') . '</th>'
+            . '<th>' . $sortLink('spf', 'SPF pass') . View::helpTooltip('spf-overview', 'What SPF pass means') . '</th>'
             . '</tr></thead><tbody>' . ($tr !== '' ? $tr : '<tr><td colspan="7" class="empty">No sources in the last ' . self::TREND_WINDOW_DAYS . ' days.</td></tr>') . '</tbody></table></div></div>';
     }
 
@@ -1045,7 +1080,8 @@ final class DomainController
 
             $items .= '<div class="rec-item">'
                 . View::badge($this->severityVariant($row->severity), strtoupper($row->severity))
-                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>' . $subject
+                . '<span class="rec-rule">' . View::e($row->ruleId) . '</span>'
+                . View::helpTooltip($this->ruleHelpSlug($row->ruleId), 'What triggers ' . $row->ruleId) . $subject
                 . '<span class="rec-meta">first seen ' . View::e($row->firstSeen) . ' &middot; last seen ' . View::e($row->lastSeen) . '</span>'
                 . '<code class="rec-evidence">' . $evidence . '</code>'
                 . '</div>';
@@ -1061,6 +1097,12 @@ final class DomainController
             'medium' => 'warning',
             default  => 'neutral', // low, info
         };
+    }
+
+    /** "R1".."R12" -> the matching src/Help/content/rules.php slug. */
+    private function ruleHelpSlug(string $ruleId): string
+    {
+        return 'rule-' . strtolower($ruleId);
     }
 
     /** @param list<array<string, mixed>> $reports */

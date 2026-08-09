@@ -45,6 +45,7 @@ final class View
         if ($user !== null) {
             echo '<div class="topnav">'
                . '<a href="/">Domains</a>'
+               . '<a href="/help">Help</a>'
                . '<a href="/account/security">Security</a>';
 
             if (Roles::atLeast($user->role, Roles::ADMIN)) {
@@ -93,6 +94,19 @@ final class View
     public static function icon(string $id): string
     {
         return '<svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-' . self::e($id) . '"/></svg>';
+    }
+
+    /**
+     * A "?" trigger for the help-system tooltip (docs/feature-helpsystem.md
+     * §4.1/§6.2) — public/assets/help.js wires the click, fetches
+     * /help/inline?slug=, and renders the popover. Reuses the existing
+     * help-circle icon rather than a literal "?" glyph, per this app's
+     * SVG-only/no-emoji icon policy.
+     */
+    public static function helpTooltip(string $slug, string $ariaLabel): string
+    {
+        return '<button type="button" class="help-trigger" data-help-slug="' . self::e($slug) . '" aria-label="' . self::e($ariaLabel) . '">'
+            . self::icon('help-circle') . '</button>';
     }
 
     /**

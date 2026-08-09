@@ -30,11 +30,13 @@ use App\Config;
 use App\Database;
 use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
+use App\Help\HelpRepository;
 use App\Http\AuthMiddleware;
 use App\Http\Controllers\AdminUsersController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DomainController;
+use App\Http\Controllers\HelpController;
 use App\Http\Controllers\InviteController;
 use App\Http\Controllers\KnownSendersController;
 use App\Http\Controllers\PasswordResetController;
@@ -106,6 +108,7 @@ $adminController = new AdminUsersController(
 );
 $knownSendersController = new KnownSendersController($pdo, $audit, $auth);
 $auditLogController      = new AuditLogController($audit, $auth);
+$helpController          = new HelpController(new HelpRepository(HelpRepository::defaultContentFiles()), $auth);
 $healthCheckRepository   = new HealthCheckRepository($pdo);
 $domainController      = new DomainController(
     $pdo,
@@ -180,6 +183,11 @@ $router->post('/admin/known-senders/delete', $auth->guardPost(Roles::ADMIN, [$kn
 
 // --- Audit log viewer (spec §15.7 — Super-admin tier, read-only) -----------
 $router->get('/admin/audit-log', $auth->guard(Roles::SUPER_ADMIN, [$auditLogController, 'list']));
+
+// --- Help system (docs/feature-helpsystem.md) — public articles, auth-gated tooltip fetch ---
+$router->get('/help', [$helpController, 'index']);
+$router->get('/help/article', [$helpController, 'show']);
+$router->get('/help/inline', $auth->guard(Roles::READ_ONLY, [$helpController, 'inline']));
 
 // --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
 $router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));
