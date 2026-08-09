@@ -41,10 +41,10 @@ final class StepUp
     public function fieldHtml(AuthUser $actor): string
     {
         if (!$actor->hasPassword()) {
-            return '<p><em>Passkey-only account — <a href="/account/security">verify with your passkey</a> first, then retry.</em></p>';
+            return '<p class="step-up-field"><em>Passkey-only account — <a href="/account/security">verify with your passkey</a> first, then retry.</em></p>';
         }
 
-        return '<p><label>Current password'
+        return '<p class="step-up-field"><label>Current password'
             . '<input type="password" name="current_password" required></label></p>';
     }
 }

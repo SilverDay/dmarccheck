@@ -869,7 +869,7 @@ final class DomainController
             $currentP  = PolicyLevel::extract($target)                ?? 'reject';
             $currentSp = PolicyLevel::extractSubdomainPolicy($target) ?? 'reject';
 
-            $policyEditCard = '<div class="narrow narrow-tight"><div class="card">'
+            $policyEditCard = '<div class="card">'
                 . '<h2>Edit target policy</h2>'
                 . '<form method="post" action="/domain/policy">'
                 . View::csrfField($csrf) . $domainField
@@ -877,10 +877,10 @@ final class DomainController
                 . '<select id="target_p" name="target_p">' . $this->levelOptions($currentP) . '</select></div>'
                 . '<div class="field"><label for="target_sp">sp (subdomain policy)</label>'
                 . '<select id="target_sp" name="target_sp">' . $this->levelOptions($currentSp) . '</select></div>'
-                . '<div class="field"><label><input type="checkbox" name="non_sending" value="1"'
+                . '<div class="field"><label class="checkbox-label"><input type="checkbox" name="non_sending" value="1"'
                 . ((int) $domain['non_sending'] === 1 ? ' checked' : '') . '> Non-sending domain (enables R10)</label></div>'
                 . '<button type="submit" class="btn btn-secondary btn-sm">Save</button>'
-                . '</form></div></div>';
+                . '</form></div>';
         }
 
         $chartCard = '<div class="card chart-card"><h2>Pass/fail volume, last ' . self::TREND_WINDOW_DAYS . ' days</h2>'
@@ -890,18 +890,19 @@ final class DomainController
         $authRecord     = self::crossDomainAuthRecord((string) $domain['domain'], (string) $this->config->require('app.mail_from'));
 
         if ($authRecord !== null) {
-            $authRecordCard = '<div class="narrow narrow-tight"><div class="card">'
+            $authRecordCard = '<div class="card">'
                 . '<h2>Cross-domain report authorization</h2>'
                 . '<p class="card-sub">Add this TXT record so receivers accept DMARC reports for this domain (spec §11.2):</p>'
                 . '<code class="rec-evidence">' . View::e($authRecord['name']) . '  IN TXT  &quot;' . View::e($authRecord['value']) . '&quot;</code>'
-                . '</div></div>';
+                . '</div>';
         }
 
         return '<div class="page-head"><div><h1>' . View::e((string) $domain['domain']) . '</h1>'
             . '<div class="sub"><a href="/">&larr; All domains</a></div></div></div>'
-            . '<div class="overview-grid">' . $policyCard . $chartCard . '</div>'
-            . $policyEditCard
-            . $authRecordCard
+            . '<div class="overview-grid">'
+            . '<div class="overview-col">' . $policyCard . $policyEditCard . '</div>'
+            . '<div class="overview-col">' . $chartCard . $authRecordCard . '</div>'
+            . '</div>'
             . $this->renderHealthCheck($health);
     }
 
