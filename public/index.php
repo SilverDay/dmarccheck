@@ -39,6 +39,7 @@ use App\Http\Controllers\DomainController;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\InviteController;
 use App\Http\Controllers\KnownSendersController;
+use App\Http\Controllers\LandingController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Router;
@@ -109,6 +110,7 @@ $adminController = new AdminUsersController(
 $knownSendersController = new KnownSendersController($pdo, $audit, $auth);
 $auditLogController      = new AuditLogController($audit, $auth);
 $helpController          = new HelpController(new HelpRepository(HelpRepository::defaultContentFiles()), $auth);
+$landingController       = new LandingController();
 $healthCheckRepository   = new HealthCheckRepository($pdo);
 $domainController      = new DomainController(
     $pdo,
@@ -190,7 +192,18 @@ $router->get('/help/article', [$helpController, 'show']);
 $router->get('/help/inline', $auth->guard(Roles::READ_ONLY, [$helpController, 'inline']));
 
 // --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
-$router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));
+// "/" is the one route that isn't uniformly guarded: an active session sees
+// the dashboard, no session sees the public landing page (docs/feature-landing-page.md)
+// instead of a bare redirect to /login.
+$router->get('/', static function () use ($auth, $landingController, $domainController): void {
+    $user = $auth->currentUser();
+
+    if ($user !== null) {
+        $domainController->index($user);
+    } else {
+        $landingController->show();
+    }
+});
 $router->get('/domain', $auth->guard(Roles::READ_ONLY, [$domainController, 'show']));
 $router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController, 'reportDetail']));
 
