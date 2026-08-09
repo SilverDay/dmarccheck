@@ -47,6 +47,10 @@ final class View
                . '<a href="/">Domains</a>'
                . '<a href="/account/security">Security</a>';
 
+            if (Roles::atLeast($user->role, Roles::ADMIN)) {
+                echo '<a href="/admin/known-senders">Allowlist</a>';
+            }
+
             if (Roles::atLeast($user->role, Roles::SUPER_ADMIN)) {
                 echo '<a href="/admin/users">Users</a>';
             }

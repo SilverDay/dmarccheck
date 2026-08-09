@@ -34,6 +34,7 @@ use App\Http\Controllers\AdminUsersController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DomainController;
 use App\Http\Controllers\InviteController;
+use App\Http\Controllers\KnownSendersController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Router;
@@ -100,7 +101,8 @@ $securityController = new SecurityController(
 $adminController = new AdminUsersController(
     $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,
 );
-$healthCheckRepository = new HealthCheckRepository($pdo);
+$knownSendersController = new KnownSendersController($pdo, $audit, $auth);
+$healthCheckRepository   = new HealthCheckRepository($pdo);
 $domainController      = new DomainController(
     $pdo,
     new RecommendationRepository($pdo),
@@ -165,6 +167,11 @@ $router->post('/admin/users/delete', $auth->guardPost(Roles::SUPER_ADMIN, [$admi
 $router->post('/admin/users/password-reset', $auth->guardPost(Roles::SUPER_ADMIN, [$adminController, 'triggerPasswordReset']));
 $router->post('/admin/users/reset-mfa', $auth->guardPost(Roles::SUPER_ADMIN, [$adminController, 'resetMfa']));
 $router->post('/admin/users/revoke-sessions', $auth->guardPost(Roles::SUPER_ADMIN, [$adminController, 'revokeSessions']));
+
+// --- Known-senders allowlist (spec §3.6/§10.5/§15.1 — Admin tier) -----------
+$router->get('/admin/known-senders', $auth->guard(Roles::ADMIN, [$knownSendersController, 'list']));
+$router->post('/admin/known-senders/add', $auth->guardPost(Roles::ADMIN, [$knownSendersController, 'add']));
+$router->post('/admin/known-senders/delete', $auth->guardPost(Roles::ADMIN, [$knownSendersController, 'delete']));
 
 // --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
 $router->get('/', $auth->guard(Roles::READ_ONLY, [$domainController, 'index']));

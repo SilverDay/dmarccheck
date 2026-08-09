@@ -87,6 +87,9 @@ tests/        PHPUnit + fixtures
   stored as its own `tls_rpt_reports`/`tls_rpt_records` row set.
 - `bin/enrich.php` — rDNS + local GeoLite2 ASN lookup + `known_senders`
   CIDR labelling (§6), decoupled from ingestion.
+- Allowlist editor (§3.6/§10.5/§15.1, Admin tier) — add/remove
+  `known_senders` CIDR/IP rules, global or scoped to one domain; rules take
+  effect the next time enrichment/analysis runs.
 - `bin/healthcheck.php` — the full §11.2 DNS/network posture checklist
   (SPF, DMARC, cross-domain report-destination authorization, DKIM
   selector probing, MX, DNSSEC, MTA-STS, TLS-RPT, BIMI, STARTTLS+cert via

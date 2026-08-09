@@ -27,6 +27,23 @@ final class Ip
         return $ip === false ? '(invalid)' : $ip;
     }
 
+    /** Validates the free-text ip_or_cidr the known_senders editor accepts (§3.6). */
+    public static function isValidIpOrCidr(string $value): bool
+    {
+        if (!str_contains($value, '/')) {
+            return @inet_pton($value) !== false;
+        }
+
+        [$subnet, $bits] = explode('/', $value, 2);
+        $subnetBin       = @inet_pton($subnet);
+
+        if ($subnetBin === false || !ctype_digit($bits)) {
+            return false;
+        }
+
+        return (int) $bits <= (strlen($subnetBin) === 4 ? 32 : 128);
+    }
+
     /** CIDR match for the known_senders allowlist (§3.6). */
     public static function inCidr(string $ip, string $cidr): bool
     {

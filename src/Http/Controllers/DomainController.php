@@ -292,9 +292,9 @@ final class DomainController
     public static function healthGrade(array $tally): array
     {
         return match (true) {
-            ($tally[HealthCheckItemResult::FAIL] ?? 0)  > 0  => ['variant' => 'danger', 'label' => 'Fail'],
+            ($tally[HealthCheckItemResult::FAIL] ?? 0)  > 0 => ['variant' => 'danger', 'label' => 'Fail'],
             ($tally[HealthCheckItemResult::ERROR] ?? 0) > 0 => ['variant' => 'neutral', 'label' => 'Error'],
-            ($tally[HealthCheckItemResult::WARN] ?? 0)  > 0  => ['variant' => 'warning', 'label' => 'Warn'],
+            ($tally[HealthCheckItemResult::WARN] ?? 0)  > 0 => ['variant' => 'warning', 'label' => 'Warn'],
             default                                         => ['variant' => 'success', 'label' => 'Pass'],
         };
     }
