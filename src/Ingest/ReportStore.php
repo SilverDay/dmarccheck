@@ -48,8 +48,8 @@ final class ReportStore
         try {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO reports
-                    (domain_id, reporter_org, report_id, date_begin, date_end, raw_file_hash)
-                 VALUES (?, ?, ?, ?, ?, ?)'
+                    (domain_id, reporter_org, report_id, date_begin, date_end, raw_file_hash, generator, discovery_method)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $stmt->execute([
@@ -59,14 +59,16 @@ final class ReportStore
                 $report->dateBegin->format('Y-m-d H:i:s'),
                 $report->dateEnd->format('Y-m-d H:i:s'),
                 $rawFileHash,
+                $report->generator,
+                $report->discoveryMethod,
             ]);
 
             $reportRowId = (int) $this->pdo->lastInsertId();
 
             $recordStmt = $this->pdo->prepare(
                 'INSERT INTO report_records
-                    (report_id, source_ip, `count`, disposition, dkim_result, spf_result, header_from)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+                    (report_id, source_ip, `count`, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $authStmt = $this->pdo->prepare(
@@ -83,6 +85,8 @@ final class ReportStore
                     (string) $record['dkim_result'],
                     (string) $record['spf_result'],
                     ($record['header_from'] ?? '') !== '' ? $record['header_from'] : null,
+                    $record['envelope_from'] ?? null,
+                    $record['envelope_to']   ?? null,
                 ]);
 
                 $recordRowId = (int) $this->pdo->lastInsertId();

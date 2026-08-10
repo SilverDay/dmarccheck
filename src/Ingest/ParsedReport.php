@@ -22,6 +22,10 @@ final readonly class ParsedReport
         public string $policyPublished,
         public array $records,
         public array $warnings = [],
+        // DMARCbis (RFC 9990) additions — null for every classic-era
+        // report, which is the normal case for years yet.
+        public ?string $generator = null,
+        public ?string $discoveryMethod = null,
     ) {
     }
 

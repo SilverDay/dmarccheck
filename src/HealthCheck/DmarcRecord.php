@@ -23,6 +23,13 @@ final readonly class DmarcRecord
         public ?int $pct,
         public ?string $adkim,
         public ?string $aspf,
+        // DMARCbis (RFC 9989) additions. 'pct' above is kept even though
+        // RFC 9989 removed it as a defined tag — a currently-published
+        // record may still have it, and later deprecation-flagging
+        // (docs/feature-dmarcbis.md Phase 3) needs to see that.
+        public ?string $nonExistentSubdomainPolicy = null,
+        public ?string $psd = null,
+        public ?string $testing = null,
     ) {
     }
 
@@ -53,6 +60,9 @@ final readonly class DmarcRecord
             isset($tags['pct']) && ctype_digit($tags['pct']) ? (int) $tags['pct'] : null,
             $tags['adkim'] ?? null,
             $tags['aspf']  ?? null,
+            isset($tags['np']) ? strtolower($tags['np']) : null,
+            isset($tags['psd']) ? strtolower($tags['psd']) : null,
+            isset($tags['t']) ? strtolower($tags['t']) : null,
         );
     }
 
@@ -77,7 +87,15 @@ final readonly class DmarcRecord
     {
         $parts = [];
 
-        foreach (['p' => $this->policy, 'sp' => $this->subdomainPolicy, 'pct' => $this->pct, 'adkim' => $this->adkim, 'aspf' => $this->aspf] as $tag => $value) {
+        foreach ([
+            'p'     => $this->policy,
+            'sp'    => $this->subdomainPolicy,
+            'np'    => $this->nonExistentSubdomainPolicy,
+            'pct'   => $this->pct,
+            'adkim' => $this->adkim,
+            'aspf'  => $this->aspf,
+            't'     => $this->testing,
+        ] as $tag => $value) {
             if ($value !== null && $value !== '') {
                 $parts[] = "$tag=$value";
             }

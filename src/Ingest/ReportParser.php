@@ -110,6 +110,8 @@ final class ReportParser
             policyPublished: $this->formatPolicy($policy),
             records: $records,
             warnings: $this->recordWarnings,
+            generator: $this->text($meta, 'generator') ?: null,
+            discoveryMethod: $this->text($policy, 'discovery_method') ?: null,
         );
     }
 
@@ -133,13 +135,16 @@ final class ReportParser
         $authResults = $this->firstChild($node, 'auth_results');
 
         return [
-            'source_ip'    => $sourceIp,
-            'count'        => max(0, (int) $this->text($row, 'count')),
-            'disposition'  => $this->enum($this->text($evaluated, 'disposition'), ['none', 'quarantine', 'reject'], 'none'),
-            'dkim_result'  => $this->enum($this->text($evaluated, 'dkim'), ['pass', 'fail'], 'fail'),
-            'spf_result'   => $this->enum($this->text($evaluated, 'spf'), ['pass', 'fail'], 'fail'),
-            'header_from'  => strtolower($this->text($identifiers, 'header_from')),
-            'auth_results' => $this->extractAuthResults($authResults),
+            'source_ip'   => $sourceIp,
+            'count'       => max(0, (int) $this->text($row, 'count')),
+            'disposition' => $this->enum($this->text($evaluated, 'disposition'), ['none', 'quarantine', 'reject'], 'none'),
+            'dkim_result' => $this->enum($this->text($evaluated, 'dkim'), ['pass', 'fail'], 'fail'),
+            'spf_result'  => $this->enum($this->text($evaluated, 'spf'), ['pass', 'fail'], 'fail'),
+            'header_from' => strtolower($this->text($identifiers, 'header_from')),
+            // DMARCbis (RFC 9990) additions — absent on every classic-era report.
+            'envelope_from' => strtolower($this->text($identifiers, 'envelope_from')) ?: null,
+            'envelope_to'   => strtolower($this->text($identifiers, 'envelope_to')) ?: null,
+            'auth_results'  => $this->extractAuthResults($authResults),
         ];
     }
 
@@ -174,11 +179,24 @@ final class ReportParser
     private function formatPolicy(\DOMNode $policy): string
     {
         $parts = [];
-        foreach (['p', 'sp', 'pct', 'adkim', 'aspf'] as $tag) {
+        // 'pct' is kept even though RFC 9989 removed it as a defined tag —
+        // a report can still describe a classic-era published record, and
+        // downstream deprecation-flagging (docs/feature-dmarcbis.md Phase 3)
+        // needs to see it. 'np' (non-existent-subdomain policy) is new.
+        foreach (['p', 'sp', 'np', 'pct', 'adkim', 'aspf'] as $tag) {
             $value = $this->text($policy, $tag);
             if ($value !== '') {
                 $parts[] = "$tag=$value";
             }
+        }
+
+        // 't' (test mode, RFC 9989) — the schema element name wasn't
+        // confirmed with certainty (RFC 9990 Appendix C references it as
+        // "testing"), so both are read defensively; same tolerant stance
+        // every other tag here already takes toward vendor deviation.
+        $testing = $this->text($policy, 't') ?: $this->text($policy, 'testing');
+        if ($testing !== '') {
+            $parts[] = "t=$testing";
         }
 
         return implode('; ', $parts);

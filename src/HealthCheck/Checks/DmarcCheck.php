@@ -65,7 +65,13 @@ final class DmarcCheck implements HealthCheck
             'adkim'            => $record->adkim,
             'aspf'             => $record->aspf,
             'rua'              => $record->ruaAddresses,
-            'issues'           => $issues,
+            // DMARCbis (RFC 9989) additions — not yet surfaced in the UI
+            // (docs/feature-dmarcbis.md Phase 2), captured here so that
+            // work has data to read.
+            'non_existent_subdomain_policy' => $record->nonExistentSubdomainPolicy,
+            'psd'                           => $record->psd,
+            'testing'                       => $record->testing,
+            'issues'                        => $issues,
         ])];
     }
 }

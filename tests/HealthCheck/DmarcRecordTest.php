@@ -42,4 +42,33 @@ final class DmarcRecordTest extends TestCase
         self::assertNotNull($record);
         self::assertSame('p=reject; sp=reject', $record->toPolicyString());
     }
+
+    /** DMARCbis (RFC 9989) additions — docs/feature-dmarcbis.md Phase 1. */
+    public function testParsesDmarcbisTags(): void
+    {
+        $record = DmarcRecord::parse('v=DMARC1; p=reject; np=reject; psd=n; t=y');
+
+        self::assertNotNull($record);
+        self::assertSame('reject', $record->nonExistentSubdomainPolicy);
+        self::assertSame('n', $record->psd);
+        self::assertSame('y', $record->testing);
+    }
+
+    public function testDmarcbisTagsAreNullWhenAbsent(): void
+    {
+        $record = DmarcRecord::parse('v=DMARC1; p=reject');
+
+        self::assertNotNull($record);
+        self::assertNull($record->nonExistentSubdomainPolicy);
+        self::assertNull($record->psd);
+        self::assertNull($record->testing);
+    }
+
+    public function testToPolicyStringIncludesDmarcbisTagsInReportParserOrder(): void
+    {
+        $record = DmarcRecord::parse('v=DMARC1; p=reject; sp=reject; np=reject; pct=50; adkim=s; aspf=r; t=y');
+
+        self::assertNotNull($record);
+        self::assertSame('p=reject; sp=reject; np=reject; pct=50; adkim=s; aspf=r; t=y', $record->toPolicyString());
+    }
 }
