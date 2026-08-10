@@ -10,6 +10,9 @@ use App\HealthCheck\MxRecord;
 /** @internal test double for DnsResolver */
 final class FakeDnsResolver implements DnsResolver
 {
+    /** @var list<string> every name passed to txt(), in call order — e.g. for asserting OrgDomain's query cap */
+    public array $txtCalls = [];
+
     /**
      * @param array<string, list<string>> $txtRecords name => TXT values
      * @param array<string, list<MxRecord>> $mxRecords domain => MX records
@@ -26,6 +29,8 @@ final class FakeDnsResolver implements DnsResolver
 
     public function txt(string $name): array
     {
+        $this->txtCalls[] = $name;
+
         return $this->txtRecords[$name] ?? [];
     }
 
