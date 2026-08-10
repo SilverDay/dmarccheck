@@ -402,6 +402,7 @@ final class DomainController
         $recCountsByDomain = $this->recommendations->countsBySeverityForAllDomains();
         $trendByDomain     = $this->fetchCardTrendData();
         $ingestionHealth   = $this->fetchIngestionHealth();
+        $dmarcbisAttention = $this->healthChecks->countDomainsNeedingDmarcbisAttention();
 
         $lastHealthCheckAt = null;
 
@@ -463,11 +464,18 @@ final class DomainController
             default   => View::badge('neutral', 'Never run'),
         };
 
+        $dmarcbisBadge = $dmarcbisAttention > 0
+            ? View::badge('warning', (string) $dmarcbisAttention)
+            : View::badge('success', '0');
+
         $body .= '<div class="stats">'
             . '<div class="stat-tile"><div class="label">Domains monitored</div><div class="value">' . \count($domains) . '</div></div>'
             . '<div class="stat-tile"><div class="label">Reports, last 7 days</div><div class="value">' . $reportsLast7d . '</div></div>'
             . '<div class="stat-tile"><div class="label">Last ingestion</div><div class="value sm">' . $ingestBadge . '</div></div>'
             . '<div class="stat-tile"><div class="label">Last health check</div><div class="value mono sm">' . View::e($lastHealthCheckAt ?? 'never') . '</div></div>'
+            . '<div class="stat-tile"><div class="label">DMARCbis attention'
+            . View::helpTooltip('dmarcbis-overview', 'What DMARCbis attention means')
+            . '</div><div class="value sm">' . $dmarcbisBadge . '</div></div>'
             . '</div>';
 
         $body .= '<div class="section-head"><h2>Domains</h2></div>'
@@ -977,7 +985,111 @@ final class DomainController
             . '<div class="overview-col">' . $chartCard . $authRecordCard . '</div>'
             . '</div>'
             . $this->renderHealthCheck($user, $health, (string) $domain['domain'], $mailFrom, $active)
+            . $this->renderDmarcbisReadiness($health)
             . ($statusForm !== '' ? '<script src="/assets/webauthn.js"></script>' : '');
+    }
+
+    /**
+     * A guided-migration-style summary of this domain's DMARCbis posture
+     * (docs/feature-dmarcbis.md Phase 5) — always renders, a stable
+     * landmark rather than something that appears/disappears. Reuses the
+     * same $health object renderHealthCheck() already has, no new query;
+     * restates the `dmarc` check's own findings from Phases 2/3 as three
+     * checklist lines rather than duplicating its full reason text.
+     */
+    private function renderDmarcbisReadiness(?HealthCheckSummary $health): string
+    {
+        $sectionTitle = '<h2>DMARCbis readiness' . View::helpTooltip('card-dmarcbis-readiness', 'What this section shows') . '</h2>';
+
+        if ($health === null) {
+            return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No health check has been run yet.</p>';
+        }
+
+        $dmarcItem = null;
+
+        foreach ($health->items as $item) {
+            if ($item->checkName === 'dmarc') {
+                $dmarcItem = $item;
+
+                break;
+            }
+        }
+
+        if ($dmarcItem === null) {
+            return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No health check has been run yet.</p>';
+        }
+
+        $detail = $dmarcItem->detail;
+        $rows   = '';
+
+        $rows .= $this->dmarcbisPctRow($detail);
+        $rows .= $this->dmarcbisOrgDomainRow($detail);
+        $rows .= $this->dmarcbisNewTagsRow($detail);
+
+        return '<div class="section-head">' . $sectionTitle . '</div><div class="health-grid">' . $rows . '</div>';
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function dmarcbisPctRow(array $detail): string
+    {
+        if (isset($detail['pct']) && \is_int($detail['pct'])) {
+            return $this->dmarcbisRow(
+                'warning',
+                'pct= tag',
+                "Still published (pct={$detail['pct']}) — removed under RFC 9989. Use the \"Fix me\" button on the DMARC health-check row above to drop it.",
+                'dmarcbis-deprecated-tags',
+            );
+        }
+
+        return $this->dmarcbisRow('success', 'pct= tag', 'Not published — already clear of this deprecated tag.', 'dmarcbis-deprecated-tags');
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function dmarcbisOrgDomainRow(array $detail): string
+    {
+        if (isset($detail['org_domain'])) {
+            $policy = isset($detail['org_domain_policy_string']) ? (string) $detail['org_domain_policy_string'] : '';
+
+            return $this->dmarcbisRow(
+                'neutral',
+                'Organizational-domain coverage',
+                "Inherits from {$detail['org_domain']} ($policy) — no record of its own.",
+                'dmarcbis-org-domain',
+            );
+        }
+
+        if (isset($detail['policy_string'])) {
+            return $this->dmarcbisRow('success', 'Organizational-domain coverage', 'Publishes its own record directly — no inheritance needed.', 'dmarcbis-org-domain');
+        }
+
+        return $this->dmarcbisRow('danger', 'Organizational-domain coverage', 'No coverage found anywhere in this domain\'s ancestry.', 'dmarcbis-org-domain');
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function dmarcbisNewTagsRow(array $detail): string
+    {
+        $set = [];
+
+        foreach (['non_existent_subdomain_policy' => 'np', 'psd' => 'psd', 'testing' => 't'] as $key => $tag) {
+            if (!empty($detail[$key]) && \is_string($detail[$key])) {
+                $set[] = "$tag={$detail[$key]}";
+            }
+        }
+
+        if ($set === []) {
+            return $this->dmarcbisRow('neutral', 'New optional tags (np=/psd=/t=)', 'None published yet — optional, no action needed.', 'dmarcbis-overview');
+        }
+
+        return $this->dmarcbisRow('success', 'New optional tags (np=/psd=/t=)', implode(', ', $set), 'dmarcbis-overview');
+    }
+
+    private function dmarcbisRow(string $variant, string $label, string $text, string $helpSlug): string
+    {
+        return '<div class="health-item">'
+            . View::badge($variant, $label)
+            . View::helpTooltip($helpSlug, "What $label means")
+            . '<span class="health-reason">' . View::e($text) . '</span>'
+            . '</div>';
     }
 
     /**
@@ -1118,11 +1230,15 @@ final class DomainController
         }
 
         return match ($checkName) {
-            'spf', 'dmarc', 'tls_rpt', 'bimi' => $this->firstRecordEvidence($detail),
-            'dkim'                            => $this->dkimEvidence($detail),
-            'mx'                              => $this->mxHostsEvidence($detail),
-            'mx_resolution'                   => $this->mxResolutionEvidence($detail),
-            'dnssec'                          => isset($detail['ds_records']) && \is_array($detail['ds_records'])
+            'spf', 'tls_rpt', 'bimi' => $this->firstRecordEvidence($detail),
+            // DmarcCheck stores a reconstructed 'policy_string', never 'record' —
+            // the INFO org-domain-inheritance case has neither key, and needs
+            // none: its full explanation already lives in reasonLine()'s text.
+            'dmarc'         => isset($detail['policy_string']) ? (string) $detail['policy_string'] : null,
+            'dkim'          => $this->dkimEvidence($detail),
+            'mx'            => $this->mxHostsEvidence($detail),
+            'mx_resolution' => $this->mxResolutionEvidence($detail),
+            'dnssec'        => isset($detail['ds_records']) && \is_array($detail['ds_records'])
                 ? implode('; ', array_map('strval', $detail['ds_records'])) : null,
             'mta_sts'  => isset($detail['url']) ? (string) $detail['url'] : null,
             'starttls' => $this->startTlsEvidence($detail),

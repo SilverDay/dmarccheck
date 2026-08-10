@@ -105,6 +105,37 @@ final class HealthCheckRepository
         );
     }
 
+    /**
+     * How many active domains' latest DMARC health-check result has a
+     * DMARCbis-relevant finding — still publishing the RFC 9989-removed
+     * `pct=` tag, or covered only via organizational-domain inheritance
+     * (docs/feature-dmarcbis.md Phase 5). A lightweight overview-dashboard
+     * count; latestForDomain() is the per-domain source of full detail.
+     *
+     * JSON_VALUE() (not JSON_EXTRACT()) is required here — JSON_EXTRACT()
+     * returns a JSON *null* scalar (SQL-non-NULL, `IS NOT NULL` is TRUE for
+     * it) when the key's value is JSON null, which every PASS/WARN `dmarc`
+     * row has for `pct` regardless of whether it's actually published
+     * (verified live: this false-positived 6/6 real domains before the
+     * fix). JSON_VALUE() correctly collapses both "key absent" and
+     * "value is JSON null" to genuine SQL NULL, which is exactly the
+     * "not flagged" case either way.
+     */
+    public function countDomainsNeedingDmarcbisAttention(): int
+    {
+        return (int) $this->pdo->query(
+            "SELECT COUNT(DISTINCT hc.domain_id)
+               FROM health_checks hc
+               JOIN (SELECT domain_id, MAX(id) AS id FROM health_checks GROUP BY domain_id) latest
+                 ON latest.domain_id = hc.domain_id AND latest.id = hc.id
+               JOIN domains d ON d.id = hc.domain_id AND d.active = 1
+               JOIN health_check_items hci ON hci.check_id = hc.id
+              WHERE hci.check_name = 'dmarc'
+                AND (JSON_VALUE(hci.detail_json, '$.pct') IS NOT NULL
+                  OR JSON_VALUE(hci.detail_json, '$.org_domain') IS NOT NULL)"
+        )->fetchColumn();
+    }
+
     /** The most recent health check run for a domain, with its items, for the dashboard drill-down (spec §7.2). */
     public function latestForDomain(int $domainId): ?HealthCheckSummary
     {

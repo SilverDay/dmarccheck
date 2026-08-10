@@ -63,7 +63,8 @@ return [
         $category,
         'sp lets a domain set a different DMARC policy specifically for its subdomains, overriding the main p= tag for anything not exactly the organizational domain.',
         '<p><code>sp=</code> overrides <code>p=</code> for mail claiming to be from any subdomain of the published domain (e.g. <code>mail.example.com</code>, <code>newsletter.example.com</code>) that doesn\'t itself publish its own DMARC record. Without <code>sp=</code>, subdomains inherit <code>p=</code>.</p>'
-            . '<p>Leaving <code>sp=</code> unset while an attacker spoofs a plausible-looking subdomain that never sends real mail is exactly the gap this tool\'s R11 recommendation watches for — publishing <code>sp=reject</code> on a domain that has no legitimate subdomain traffic is usually safe and closes off a common spoofing vector.</p>',
+            . '<p>Leaving <code>sp=</code> unset while an attacker spoofs a plausible-looking subdomain that never sends real mail is exactly the gap this tool\'s R11 recommendation watches for — publishing <code>sp=reject</code> on a domain that has no legitimate subdomain traffic is usually safe and closes off a common spoofing vector.</p>'
+            . '<p>Under <a href="/help/article?slug=dmarcbis-overview">DMARCbis</a> (RFC 9989), a new <code>np=</code> tag sets a policy specifically for subdomains that <strong>don\'t exist</strong> in DNS at all — distinct from <code>sp=</code>, which covers subdomains that exist but publish no record of their own. It\'s optional and defaults to whatever <code>sp=</code>/<code>p=</code> already resolve to; no current domain in this tool needs to set it to stay correctly configured.</p>',
         ['RFC 7489 §6.3'],
     ),
     new HelpArticle(

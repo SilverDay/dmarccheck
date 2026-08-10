@@ -74,6 +74,7 @@ final class HelpCatalogCompletenessTest extends TestCase
             'card-pass-fail-chart',
             'hc-report-auth',
             'card-health-check',
+            'card-dmarcbis-readiness',
             'card-sources',
             'card-recommendations',
             'card-recent-reports',
