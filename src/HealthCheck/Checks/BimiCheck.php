@@ -26,7 +26,10 @@ final class BimiCheck implements HealthCheck
             'dns',
             'bimi',
             $records !== [] ? HealthCheckItemResult::PASS : HealthCheckItemResult::INFO,
-            ['reason' => $records !== [] ? 'BIMI record present at default selector' : 'no BIMI record at default selector (optional)']
+            [
+                'reason' => $records !== [] ? 'BIMI record present at default selector' : 'no BIMI record at default selector (optional)',
+                ...($records !== [] ? ['record' => $records[0]] : []),
+            ]
         )];
     }
 }

@@ -67,6 +67,7 @@ final class DkimCheck implements HealthCheck
 
         return new HealthCheckItemResult('dns', 'dkim', $status, [
             'selector' => $selector,
+            'record'   => $combined,
             'reason'   => $reason,
         ]);
     }

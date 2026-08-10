@@ -294,6 +294,7 @@ code { font-family: var(--font-mono); background: var(--color-surface-muted); pa
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 24px 0 8px; gap: 12px; flex-wrap: wrap; }
 .section-head h2 { font-size: 15px; font-weight: 700; margin: 0; }
 .section-head .sub { font-size: 12.5px; color: var(--color-fg-muted); }
+.section-head-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .table-filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .table-filters a {
@@ -308,9 +309,16 @@ th a.active { color: var(--color-accent); }
 td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px; }
 
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
-.health-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; }
+/* min-width: 0 overrides the grid item's default min-width: auto (sized to
+   its content's min-content) — without it, a long unbroken evidence string
+   can force this cell, and the whole grid row/track, wider than the card. */
+.health-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--color-surface-muted); border-radius: 6px; min-width: 0; }
 .health-category { font-size: 10.5px; color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-left: auto; }
 .health-reason { flex-basis: 100%; font-size: 11px; color: var(--color-fg-muted); }
+.health-evidence {
+  flex-basis: 100%; max-width: 100%; display: block; font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-fg-muted); white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
+}
 /* .fix-trigger opens a floating .fix-popover (help.js) — the fix content
    itself lives in a <template>, never rendered in-flow, so it can't
    inflate a .health-grid row the way an always-visible block would. */

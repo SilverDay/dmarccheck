@@ -12,6 +12,7 @@ use App\Config;
 use App\HealthCheck\Fix\DmarcFixSuggester;
 use App\HealthCheck\Fix\HealthCheckFix;
 use App\HealthCheck\Fix\MtaStsFixSuggester;
+use App\HealthCheck\Fix\ReportDestinationAuthFixSuggester;
 use App\HealthCheck\Fix\SpfFixSuggester;
 use App\HealthCheck\Fix\TlsRptFixSuggester;
 use App\HealthCheck\HealthCheckItemResult;
@@ -33,19 +34,22 @@ use PDO;
  * (policy/trend/health-check), source table, recommendations panel, recent
  * reports, a raw per-record report-detail view, and the mutating actions
  * (spec §15.1) split across two tiers — Admin (onboard/configure: `add()`,
- * `approveBaseline()`, `updatePolicy()`) and Super Admin (remove: the only
- * domain-management action reserved above Admin, plus the mirrored
- * `reactivate()`) — adding a domain (§11.1: runs a health check
+ * `approveBaseline()`, `updatePolicy()`, `runHealthCheck()`) and Super Admin
+ * (remove: the only domain-management action reserved above Admin, plus the
+ * mirrored `reactivate()`) — adding a domain (§11.1: runs a health check
  * synchronously so there's an immediate baseline), approving a domain's
  * current policy as the R9/alerting drift baseline (§10.6: never
  * silent/automatic), editing `target_policy`/`non_sending` post-onboarding,
- * and deactivating/reactivating a domain (§15.3: step-up-gated, a soft
- * `active` flip rather than a destructive delete so report/health-check
- * history is retained per §13 — every cron script already filters on
- * `active = 1`, so deactivation removes a domain from every pipeline, not
- * just the dashboard). The drill-down is addressed by query string
- * (`?domain=`) rather than a path param, since `Router` is exact-string-match
- * only.
+ * re-running the health check suite on demand (same synchronous 12-check
+ * run `add()` does at onboarding, `trigger='manual'` — the same value
+ * `bin/healthcheck.php` already defaults to for any non-scheduled run, so
+ * this doesn't need a new enum value), and deactivating/reactivating a
+ * domain (§15.3: step-up-gated, a soft `active` flip rather than a
+ * destructive delete so report/health-check history is retained per §13 —
+ * every cron script already filters on `active = 1`, so deactivation
+ * removes a domain from every pipeline, not just the dashboard). The
+ * drill-down is addressed by query string (`?domain=`) rather than a path
+ * param, since `Router` is exact-string-match only.
  */
 final class DomainController
 {
@@ -121,6 +125,58 @@ final class DomainController
         $this->audit->record($actor->id, 'domain.onboarded', $domain, $tally, $this->clientIp());
 
         header('Location: /domain?' . http_build_query(['domain' => $domain]));
+    }
+
+    public function runHealthCheck(AuthUser $actor): void
+    {
+        $domain = $this->findDomain((string) ($_POST['domain'] ?? ''));
+
+        if ($domain === null) {
+            $this->renderNotFound($actor, 'Domain not found.');
+
+            return;
+        }
+
+        if ((int) $domain['active'] !== 1) {
+            $this->renderDrillDown($actor, $domain, error: 'Reactivate this domain before running a health check.');
+
+            return;
+        }
+
+        // Same rare/deliberate-admin-action rationale as add()'s onboarding
+        // health check — 12 checks, each individually bounded, can still
+        // exceed a typical 30s request limit in the worst case.
+        set_time_limit(120);
+
+        $domainId = (int) $domain['id'];
+        $tally    = ['pass' => 0, 'warn' => 0, 'fail' => 0, 'info' => 0, 'error' => 0];
+
+        try {
+            $items = $this->healthCheckFactory->forDomain($domainId)->run($domainId, (string) $domain['domain'], 'manual');
+
+            foreach ($items as $item) {
+                $tally[$item->status] = ($tally[$item->status] ?? 0) + 1;
+            }
+        } catch (\Throwable) {
+            $this->renderDrillDown($actor, $domain, error: 'Health check run failed unexpectedly.');
+
+            return;
+        }
+
+        $this->audit->record($actor->id, 'domain.healthcheck_run', (string) $domain['domain'], $tally, $this->clientIp());
+
+        // DmarcCheck may have just updated current_published_policy — re-fetch
+        // so the re-rendered page (no redirect here, unlike add()) reflects it.
+        $domain = $this->findDomain((string) $domain['domain']) ?? $domain;
+
+        $this->renderDrillDown($actor, $domain, flash: sprintf(
+            'Health check complete: %d pass, %d warn, %d fail, %d info, %d error.',
+            $tally['pass'],
+            $tally['warn'],
+            $tally['fail'],
+            $tally['info'],
+            $tally['error'],
+        ));
     }
 
     public function approveBaseline(AuthUser $actor): void
@@ -920,7 +976,7 @@ final class DomainController
             . '<div class="overview-col">' . $policyCard . $policyEditCard . '</div>'
             . '<div class="overview-col">' . $chartCard . $authRecordCard . '</div>'
             . '</div>'
-            . $this->renderHealthCheck($health, (string) $domain['domain'], $mailFrom)
+            . $this->renderHealthCheck($user, $health, (string) $domain['domain'], $mailFrom, $active)
             . ($statusForm !== '' ? '<script src="/assets/webauthn.js"></script>' : '');
     }
 
@@ -956,12 +1012,13 @@ final class DomainController
         return $html;
     }
 
-    private function renderHealthCheck(?HealthCheckSummary $health, string $domain, string $mailFrom): string
+    private function renderHealthCheck(AuthUser $user, ?HealthCheckSummary $health, string $domain, string $mailFrom, bool $active): string
     {
         $sectionTitle = '<h2>Health check' . View::helpTooltip('card-health-check', 'What this section shows') . '</h2>';
+        $rerunForm    = $this->renderHealthCheckRerunForm($user, $domain, $active);
 
         if ($health === null) {
-            return '<div class="section-head">' . $sectionTitle . '</div><p class="card-sub">No health check has been run yet.</p>';
+            return '<div class="section-head">' . $sectionTitle . $rerunForm . '</div><p class="card-sub">No health check has been run yet.</p>';
         }
 
         $mxHosts = [];
@@ -980,7 +1037,8 @@ final class DomainController
 
         foreach ($health->items as $index => $item) {
             $helpSlug = $this->healthCheckHelpSlug($item->checkName);
-            $reason   = isset($item->detail['reason']) ? (string) $item->detail['reason'] : null;
+            $reason   = $this->reasonLine($item->detail);
+            $evidence = $this->evidenceLine($item->checkName, $item->status, $item->detail);
             $fixes    = $this->suggestFix($item->checkName, $item->detail, $domain, $mailFrom, $mxHosts);
 
             $items .= '<div class="health-item">'
@@ -988,13 +1046,178 @@ final class DomainController
                 . ($helpSlug !== null ? View::helpTooltip($helpSlug, 'What the ' . $item->checkName . ' check does') : '')
                 . '<span class="health-category">' . View::e($item->category) . '</span>'
                 . ($reason !== null ? '<span class="health-reason">' . View::e($reason) . '</span>' : '')
+                . ($evidence !== null ? '<code class="health-evidence">' . View::e($evidence) . '</code>' : '')
                 . $this->renderFixTrigger($fixes, 'fix-tpl-' . $index)
                 . '</div>';
         }
 
         return '<div class="section-head">' . $sectionTitle
-            . '<span class="sub">Last run ' . View::e($health->runAt) . ' (' . View::e($health->trigger) . ')</span></div>'
+            . '<div class="section-head-actions"><span class="sub">Last run ' . View::e($health->runAt) . ' (' . View::e($health->trigger) . ')</span>' . $rerunForm . '</div></div>'
             . '<div class="health-grid">' . $items . '</div>';
+    }
+
+    private function renderHealthCheckRerunForm(AuthUser $user, string $domain, bool $active): string
+    {
+        if (!$active || !Roles::atLeast($user->role, Roles::ADMIN)) {
+            return '';
+        }
+
+        return '<form method="post" action="/domain/healthcheck" class="inline-form">'
+            . View::csrfField($this->auth->csrfToken())
+            . '<input type="hidden" name="domain" value="' . View::e($domain) . '">'
+            . '<button type="submit" class="btn btn-secondary btn-sm">Run health check now</button>'
+            . '</form>';
+    }
+
+    /**
+     * Evidence to show alongside a check's verdict even when it passes —
+     * the actual DNS record/probe result, not just pass/fail, per the
+     * dashboard's own "always show the SPF/DMARC entry" ask. Only the
+     * fields that are genuinely record-like are surfaced here; `reason`
+     * (rendered separately above) already covers the human-readable verdict
+     * text, so it's deliberately excluded from every branch below.
+     *
+     * @param array<string, mixed> $detail
+     */
+    /**
+     * SpfCheck/DmarcCheck record their non-fatal (pass/warn) findings under
+     * `issues` — a list, since more than one can apply at once (e.g. a weak
+     * `~all` qualifier *and* no rua=) — reserving singular `reason` for
+     * their hard-fail branches (no record found, multiple records). Without
+     * this fallback, a warn item renders its badge with no explanation at
+     * all, since `reason` is simply never set on that path.
+     *
+     * @param array<string, mixed> $detail
+     */
+    private function reasonLine(array $detail): ?string
+    {
+        if (isset($detail['reason']) && \is_string($detail['reason'])) {
+            return $detail['reason'];
+        }
+
+        if (isset($detail['issues']) && \is_array($detail['issues']) && $detail['issues'] !== []) {
+            return implode('; ', array_map('strval', $detail['issues']));
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function evidenceLine(string $checkName, string $status, array $detail): ?string
+    {
+        if (str_starts_with($checkName, 'dnsbl_')) {
+            $target = $detail['domain'] ?? $detail['ip'] ?? null;
+
+            if ($target === null) {
+                return null;
+            }
+
+            $answer = \is_array($detail['answer'] ?? null) ? implode(', ', array_map('strval', $detail['answer'])) : null;
+
+            return (string) $target . ($answer !== null ? " -> $answer" : '');
+        }
+
+        return match ($checkName) {
+            'spf', 'dmarc', 'tls_rpt', 'bimi' => $this->firstRecordEvidence($detail),
+            'dkim'                            => $this->dkimEvidence($detail),
+            'mx'                              => $this->mxHostsEvidence($detail),
+            'mx_resolution'                   => $this->mxResolutionEvidence($detail),
+            'dnssec'                          => isset($detail['ds_records']) && \is_array($detail['ds_records'])
+                ? implode('; ', array_map('strval', $detail['ds_records'])) : null,
+            'mta_sts'  => isset($detail['url']) ? (string) $detail['url'] : null,
+            'starttls' => $this->startTlsEvidence($detail),
+            'fcrdns'   => $this->fcrdnsEvidence($detail),
+            // "expects" reads like an unmet requirement — wrong framing next to a
+            // green pass badge, where the record was already confirmed present.
+            'report_destination_auth' => isset($detail['expected_record'])
+                ? ($status === HealthCheckItemResult::PASS ? 'authorized via TXT at ' : 'expects TXT at ') . (string) $detail['expected_record']
+                : null,
+            default => null,
+        };
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function firstRecordEvidence(array $detail): ?string
+    {
+        if (isset($detail['record'])) {
+            return (string) $detail['record'];
+        }
+
+        if (isset($detail['records']) && \is_array($detail['records'])) {
+            return implode('; ', array_map('strval', $detail['records']));
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function dkimEvidence(array $detail): ?string
+    {
+        if (!isset($detail['record'])) {
+            return null;
+        }
+
+        $selector = isset($detail['selector']) ? (string) $detail['selector'] : '?';
+
+        return "selector $selector: " . (string) $detail['record'];
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function mxHostsEvidence(array $detail): ?string
+    {
+        if (!isset($detail['hosts']) || !\is_array($detail['hosts'])) {
+            return null;
+        }
+
+        $parts = [];
+
+        foreach ($detail['hosts'] as $mx) {
+            if (\is_array($mx) && isset($mx['host'])) {
+                $parts[] = (string) $mx['host'] . ' (pref ' . (string) ($mx['preference'] ?? '?') . ')';
+            }
+        }
+
+        return $parts === [] ? null : implode(', ', $parts);
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function mxResolutionEvidence(array $detail): ?string
+    {
+        if (!isset($detail['host'])) {
+            return null;
+        }
+
+        $a    = \is_array($detail['a'] ?? null) ? $detail['a'] : [];
+        $aaaa = \is_array($detail['aaaa'] ?? null) ? $detail['aaaa'] : [];
+        $ips  = array_merge($a, $aaaa);
+
+        return (string) $detail['host'] . ' -> ' . ($ips !== [] ? implode(', ', array_map('strval', $ips)) : 'no A/AAAA records');
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function startTlsEvidence(array $detail): ?string
+    {
+        if (!isset($detail['host'], $detail['subject_cn'])) {
+            return null;
+        }
+
+        $issuer  = isset($detail['issuer']) ? (string) $detail['issuer'] : 'unknown';
+        $validTo = isset($detail['valid_to']) ? (string) $detail['valid_to'] : 'unknown';
+
+        return (string) $detail['host'] . ' — ' . (string) $detail['subject_cn'] . " (issuer: $issuer, valid to: $validTo)";
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function fcrdnsEvidence(array $detail): ?string
+    {
+        if (!isset($detail['ip'])) {
+            return null;
+        }
+
+        $mxHost = isset($detail['mx_host']) ? (string) $detail['mx_host'] : '?';
+        $line   = (string) $detail['ip'] . " via $mxHost";
+
+        return isset($detail['ptr']) ? $line . ' -> ' . (string) $detail['ptr'] : $line;
     }
 
     private function healthStatusVariant(string $status): string
@@ -1049,11 +1272,12 @@ final class DomainController
     private function suggestFix(string $checkName, array $detail, string $domain, string $mailFrom, array $mxHosts): array
     {
         return match ($checkName) {
-            'spf'     => SpfFixSuggester::suggest($domain, $detail),
-            'dmarc'   => DmarcFixSuggester::suggest($domain, $detail, $mailFrom),
-            'tls_rpt' => TlsRptFixSuggester::suggest($domain, $detail, $mailFrom),
-            'mta_sts' => MtaStsFixSuggester::suggest($domain, $detail, $mxHosts),
-            default   => [],
+            'spf'                     => SpfFixSuggester::suggest($domain, $detail),
+            'dmarc'                   => DmarcFixSuggester::suggest($domain, $detail, $mailFrom),
+            'tls_rpt'                 => TlsRptFixSuggester::suggest($domain, $detail, $mailFrom),
+            'mta_sts'                 => MtaStsFixSuggester::suggest($domain, $detail, $mxHosts),
+            'report_destination_auth' => ReportDestinationAuthFixSuggester::suggest($domain, $detail),
+            default                   => [],
         };
     }
 

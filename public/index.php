@@ -211,6 +211,7 @@ $router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController
 $router->post('/domains/add', $auth->guardPost(Roles::ADMIN, [$domainController, 'add']));
 $router->post('/domain/approve-baseline', $auth->guardPost(Roles::ADMIN, [$domainController, 'approveBaseline']));
 $router->post('/domain/policy', $auth->guardPost(Roles::ADMIN, [$domainController, 'updatePolicy']));
+$router->post('/domain/healthcheck', $auth->guardPost(Roles::ADMIN, [$domainController, 'runHealthCheck']));
 
 // --- Domain removal/reactivation (spec §15.1/§15.3 — Super-admin tier, step-up) ---
 $router->post('/domain/deactivate', $auth->guardPost(Roles::SUPER_ADMIN, [$domainController, 'deactivate']));

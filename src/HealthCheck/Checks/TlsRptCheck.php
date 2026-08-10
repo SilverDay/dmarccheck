@@ -30,7 +30,10 @@ final class TlsRptCheck implements HealthCheck
             'dns',
             'tls_rpt',
             $records !== [] ? HealthCheckItemResult::PASS : HealthCheckItemResult::INFO,
-            ['reason' => $records !== [] ? 'TLS-RPT record present' : 'no TLS-RPT record published']
+            [
+                'reason' => $records !== [] ? 'TLS-RPT record present' : 'no TLS-RPT record published',
+                ...($records !== [] ? ['record' => $records[0]] : []),
+            ]
         )];
     }
 }
