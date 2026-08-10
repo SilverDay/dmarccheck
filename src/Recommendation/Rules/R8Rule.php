@@ -11,8 +11,13 @@ use App\Recommendation\SourceStat;
 
 /**
  * spec §10.3 R8: at `p=quarantine` with no known-sender fallout and
- * target_policy calls for stricter still — advance `pct` toward 100 or
- * move to `reject`. The exact next step (pct bump vs. full reject) is
+ * target_policy calls for stricter still — advance toward `reject`. Under
+ * classic DMARC (RFC 7489) the staged step was bumping `pct=` toward 100;
+ * RFC 9989 (DMARCbis) removed `pct=` as a defined tag, so its replacement
+ * for a reversible/staged step is `t=y` (test mode) — binary, not
+ * percentage-based (docs/feature-dmarcbis.md D2). Firing logic here is
+ * unchanged either way — this rule only compares `current_published_policy`
+ * against `target_policy`, regime-agnostic. The exact next step is still
  * left to the human per §10.7 — this tool doesn't compute a staged
  * rollout schedule. Medium severity.
  */
