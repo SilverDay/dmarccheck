@@ -75,8 +75,8 @@ return [
         'R8 — Safe to advance policy to reject',
         $category,
         'Medium severity. Currently at p=quarantine with no known-sender authentication failures observed — the data suggests it\'s safe to move to reject.',
-        '<p><strong>Triggers when:</strong> the same shape as <a href="/help/article?slug=rule-r7">R7</a>, but starting from <a href="/help/article?slug=dmarc-policy-quarantine">p=quarantine</a> instead of <code>p=none</code> — the final step toward full enforcement.</p>'
-            . '<p><strong>What to do:</strong> same as R7 — review the evidence, then deliberately advance the target policy to <code>reject</code> yourself when confident.</p>',
+        '<p><strong>Triggers when:</strong> the same shape as <a href="/help/article?slug=rule-r7">R7</a>, but starting from <a href="/help/article?slug=dmarc-policy-quarantine">p=quarantine</a> instead of <code>p=none</code> — the step up to the strongest available policy.</p>'
+            . '<p><strong>What to do:</strong> same as R7 — review the evidence, then deliberately advance the target policy to <code>reject</code> yourself when confident. This rule only fires when your own <a href="/help/article?slug=policy-target">target policy</a> calls for reject specifically — under <a href="/help/article?slug=dmarcbis-overview">DMARCbis</a> (RFC 9989 §3.2.9), quarantine is also a fully valid, permanent "Enforcement" state, so staying there is a legitimate choice, not something this rule treats as unfinished.</p>',
         [],
     ),
     new HelpArticle(

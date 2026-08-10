@@ -50,6 +50,7 @@ final class HelpRepository
             $dir . 'general.php',
             $dir . 'pages.php',
             $dir . 'sections.php',
+            $dir . 'dmarcbis.php',
         ];
     }
 
