@@ -372,60 +372,117 @@ Onboarding 50 domains. Default sequential mode would take ~1 hour.
 
 ---
 
-## 16. Build-Wizard / First-Run Setup
+## 16. DNS Record Builder Wizards
 
-**Motivation:** New deployments face friction: manually creating the database, running migrations, editing `config.php`, setting up IMAP accounts, and performing initial health checks. A **guided wizard** accelerates onboarding for self-hosted deployments and simplifies documentation.
+**Motivation:** Users (especially non-technical domain admins) need **guided step-by-step tools to construct valid DNS records** (SPF, DMARC, DKIM, BIMI, MTA-STS, TLS-RPT) without manual syntax errors or security mistakes. Wizards complement the "Configuration Snippets" feature by enabling custom record creation from scratch, not just remediation of failing senders.
 
 **Scope:**
-- Browser-based setup wizard (pre-login, available only before any domain is onboarded):
-  - **Step 1: Welcome** — display system requirements (PHP 8.3+, MariaDB 10.11+, Apache/Nginx, `dig`/`host` installed) and a "start" button.
-  - **Step 2: Database Connection** — form for DB host, port, username, password. Test connection; offer auto-create database if DB doesn't exist and user has root access (optional, with fallback to manual setup docs).
-  - **Step 3: Run Migrations** — display the list of pending migrations from `db/migrations/*.sql` and run them. Show progress + success/error for each.
-  - **Step 4: Config Setup** — form for:
-    - IMAP server (host, port, username, password, TLS/SSL mode).
-    - SMTP server (host, port, username, password for outbound alerts).
-    - "From" email address and display name for alerts.
-    - Site name and admin email (for high-level contact).
-    - Optional: toggle for community threat reporting (if §10.8 is implemented).
-    - Save to `config/config.php` (mode `0640`) with validation (no write if file already exists).
-  - **Step 5: Create First Admin User** — form for name, email, password (or passkey creation, if supported). Generates a Super Admin account to bootstrap RBAC.
-  - **Step 6: Optional: Seed Test Domains** — offer to load `db/seed-domains.sql` (the 10 example domains) or skip to start fresh.
-  - **Step 7: Summary** — recap what was configured, link to first login, and short intro tour (optionally embed the DMARC 101 help system here).
-  - **On completion:** flag the setup as complete (e.g., `settings.setup_complete = true` or a lock file in `config/`) so the wizard doesn't re-run.
 
-- **Features:**
-  - Validation at each step (domain reachability for IMAP/SMTP, DB connectivity, file permissions).
-  - Rollback on error: if a step fails, show the error and allow retry (don't corrupt state partway).
-  - Skip buttons (optional): for experienced operators who prefer CLI / manual `config.php` editing. If skipped, wizard marks the phase as "configured externally" and resumes later.
-  - Progress indicator (e.g., step N/7).
-  - Accessibility: screen-reader friendly, keyboard-navigable.
+### 16a. SPF Record Wizard (Admin+ tier)
+- **Steps:**
+  1. **Introduction:** Show current SPF record, explain what SPF does and common mechanisms.
+  2. **Existing record analysis:** Parse and visualize current record (if exists). Show DNS lookup count.
+  3. **Mechanism builder:** Add mechanisms one-by-one:
+     - `include: <domain>` (e.g., for Google, Sendgrid, Mailchimp) — dropdown of known providers, or manual entry.
+     - `ip4:/ip6: <cidr>` — IP/CIDR input with validation.
+     - `a / mx / ptr` — checkboxes.
+     - `~all` or `-all` — radio button.
+  4. **Validation:** Real-time check:
+     - DNS lookup count (warn if >10 or reaching the limit).
+     - Syntax correctness.
+     - Suggestion: combine multiple single `include` into one if possible (to reduce lookups).
+  5. **Preview:** Show final record in plain text.
+  6. **Copy to clipboard:** Copy `v=spf1 ... -all` to paste into DNS UI.
 
-- **Deployment notes:**
-  - Wizard is accessible only before setup completion OR via a Super Admin "re-run setup" option (for re-configuration).
-  - Wizard requests are **not** rate-limited during initial setup; add rate-limiting only after login is enabled.
-  - Wizard output (errors, connection details) is logged to a setup-specific log file (not the main audit log, since the audit system isn't ready yet).
+### 16b. DMARC Record Wizard (Admin+ tier)
+- **Steps:**
+  1. **Policy selection:** Radios for `p=none`, `p=quarantine`, `p=reject` with explanation of each.
+  2. **Subdomain policy (sp):** Optional, same as `p`.
+  3. **Percentage (pct):** Slider 0–100 (default 100).
+  4. **Failure modes (fo):** Checkboxes for `0`, `1`, `d`, `s` (when to send aggregate reports).
+  5. **Reporting addresses:**
+     - **Aggregate reports (rua):** Input email(s) (can be external, e.g., Google, Agari).
+     - **Forensic reports (ruf):** Input email(s), with warning about volume.
+  6. **Alignment strictness:**
+     - `adkim`: `r` (relaxed) or `s` (strict).
+     - `aspf`: `r` or `s`.
+  7. **Advanced (optional collapsible):**
+     - `rf`: Report format (default `afrf`).
+     - `ri`: Reporting interval (seconds; default 86400).
+     - `aspf`/`adkim` sub-options (alignment mode).
+  8. **Preview:** Show final `_dmarc.<domain>` TXT record.
+  9. **Copy to clipboard + instructions:** Explain where to publish (DNS provider).
+
+### 16c. DKIM Record Wizard (Admin+ tier)
+- **Steps:**
+  1. **Selector input:** User enters or selects from known email providers (Gmail's default `google`, Office 365's `selector1`/`selector2`, etc.).
+  2. **Key format:** Radio for `RSA-2048` (default) or `RSA-1024` or `ED25519` (if supported).
+  3. **Public key input:** Paste public key or generate placeholder (with link to provider docs).
+  4. **Key validation:** Check format (PEM or base64).
+  5. **Preview:** Show `<selector>._domainkey.<domain> TXT` record with formatted key.
+  6. **Copy to clipboard + instructions:** Link to email provider's DKIM setup guide.
+
+### 16d. BIMI Record Wizard (Admin+ tier, if #10.7 implemented)
+- **Steps:**
+  1. **Intro:** Explain BIMI (Brand Indicators for Message Identification) and requirements (DMARC p=reject, logo in .svg format).
+  2. **Logo upload/URL:** Option to upload `.svg` or paste public URL.
+  3. **Logo validation:** Check file size, format, SVG validity.
+  4. **VMC (optional):** Input URL to Brand Registry or leave blank.
+  5. **Preview:** Show `default._bimi.<domain> TXT` record.
+  6. **Copy to clipboard.**
+
+### 16e. MTA-STS Record Wizard (Admin+ tier, if MTA-STS delivery supported)
+- **Steps:**
+  1. **Intro:** Explain MTA-STS (SMTP TLS requirement policy).
+  2. **Policy mode:** `testing`, `enforce`, or `none`.
+  3. **Max age:** Slider, default 86400 (24h) or 31536000 (1 year).
+  4. **Preview:** Show `.well-known/mta-sts.txt` policy and corresponding DNS TXT record `_mta-sts.<domain>`.
+  5. **Copy + deployment instructions:** Warn about hosting `.well-known/mta-sts.txt` on HTTPS server.
+
+### 16f. TLS-RPT Record Wizard (Admin+ tier)
+- **Steps:**
+  1. **Intro:** Explain TLS-RPT (TLS Report policy for delivery failures).
+  2. **Reporting address:** Email input (rua field).
+  3. **Mode:** `testing` or `aggregate`.
+  4. **Preview:** Show `_tlsrpt.<domain> TXT` record.
+  5. **Copy to clipboard.**
+
+- **Common features across all wizards:**
+  - **Accessibility:** Labels, keyboard navigation, ARIA hints.
+  - **Help text:** Inline explanations of each field (collapsible "?").
+  - **Example values:** Pre-populate with common patterns (e.g., "office365.com" for `include:` in SPF wizard).
+  - **Validation feedback:** Real-time error messages (e.g., "Invalid IP address", "DNS lookups exceed limit").
+  - **Copy-to-clipboard button:** Highlight the final record + copy button.
+  - **Link to deployment docs:** After building, show "Next steps: How to deploy this record in your DNS provider" (DNS provider dropdown).
+  - **Comparison view (optional):** Show "Current record vs. New record" side-by-side if updating.
+
+- **Data persistence:**
+  - Wizards are **stateless** (no database storage); users must manually deploy the record.
+  - Optional: Save draft records in `LocalStorage` (client-side only) for convenience.
 
 **Example user journey:**
 ```
-1. Deploy Docker / VPS instance.
-2. Navigate to https://dmarc.example.com (first access).
-3. Presented with setup wizard (Step 1: Welcome).
-4. Complete IMAP/SMTP/database/admin setup in 5–10 minutes, without touching CLI or config files.
-5. After wizard: redirected to login page with admin credentials.
-6. Log in, add first domains, health checks run automatically.
-→ System ready for ingestion within 30 minutes total.
+Admin: "I need to publish DMARC for the first time."
+→ Go to domain detail → click "DNS Record Builders" → choose "DMARC Wizard"
+→ Step 1: Select `p=quarantine` (safest initial policy)
+→ Step 2: Leave `sp` empty (applies to domain only)
+→ Step 3: Set `pct=25` (test with 25% of mail, increase over time)
+→ Step 4: Set rua email to internal abuse@
+→ Step 5: Select `adkim=r`, `aspf=r` (relaxed, safer initially)
+→ Step 6: Preview record: dmarc._dmarc.example.com IN TXT "v=DMARC1; p=quarantine; pct=25; adkim=r; aspf=r; rua=mailto:abuse@..."
+→ Click "Copy to clipboard"
+→ Go to DNS provider's web UI → paste record
+→ Return to dmarccheck → health check runs, confirms record published
 ```
 
-**Scope note:** wizard is **optional** — teams deploying via CLI (Docker Compose, Kubernetes) can skip it and run migrations + config setup manually. Wizard improves self-hosted adoption by removing installation friction.
+**Effort:** Medium-to-high. Requires:
+- Multi-step form UI (reuse state machine from Build-Wizard if applicable).
+- Record parsers/validators (SPF, DMARC syntax checking; likely already exists).
+- Provider dropdown data (Google, Office 365, Sendgrid, etc. for `include:` suggestions).
+- Accessibility testing.
+- Deployment guide links (external; not hardcoded).
 
-**Effort:** Medium. Requires:
-- Multi-step form UI (simple state machine in JS or server-side sessions).
-- Database and IMAP/SMTP validation logic (can reuse existing connection code).
-- Migration runner (likely exists in `bin/migrate.php`; wrap it for the UI).
-- Error handling and rollback strategy.
-- Setup completion flag + permission check.
-
-**Priority:** High for v1.1 (accelerates adoption); low technical risk (mostly UI work + reuse of existing validation).
+**Priority:** High for v1.2 (accelerates onboarding and improves accuracy). Can phase by record type (start with SPF + DMARC, add BIMI/MTA-STS/TLS-RPT in later phases).
 
 ---
 
@@ -448,25 +505,27 @@ Onboarding 50 domains. Default sequential mode would take ~1 hour.
 | TLS-RPT forwarding | M–H | Low (niche) | 2.0+ |
 | Dark mode | L | Low (UX polish) | 1.3 |
 | Staggered health checks | M–H | Medium (large deployments) | 1.2–1.3 |
-| Build-Wizard | M | High (adoption/onboarding) | 1.1 |
+| DNS Record Builders | M–H | High (adoption/accuracy) | 1.2 |
 
 ---
 
-## Recommendations for v1.1
+## Recommendations for v1.1–v1.2
 
-**Quick wins** (start here):
-1. **Build-Wizard** — removes installation friction, enables one-click self-hosted deployments.
-2. **Batch onboarding** — enables consulting/hosting use cases immediately.
-3. **Report filtering & export** — unblocks compliance workflows.
-4. **Webhook alerting** — plugs into existing team tooling (Slack, Teams).
+### v1.1 (Quick wins)
+1. **Batch onboarding** — enables consulting/hosting use cases immediately.
+2. **Report filtering & export** — unblocks compliance workflows.
+3. **Webhook alerting** — plugs into existing team tooling (Slack, Teams).
+4. **REST API** — enables external integrations + CLI tooling.
 
-**High-value, medium effort:**
-5. **Audit-log search** — compliance teams need it.
-6. **SPF/DKIM snippets** — speeds remediation feedback loop.
-7. **REST API** — enables external integrations + CLI tooling.
+### v1.2 (High-value, medium effort)
+5. **DNS Record Builders (SPF, DMARC)** — reduces configuration errors and accelerates initial deployment.
+6. **Audit-log search** — compliance teams need it.
+7. **SPF/DKIM snippets** — speeds remediation feedback loop.
+8. **Policy dry-run** — safer policy changes.
 
-**Nice-to-have / polish:**
-8. Custom alerting rules, domain comparison, policy dry-run, backup UI, dark mode.
+### v1.3 (Nice-to-have / polish)
+9. Custom alerting rules, domain comparison, backup UI, dark mode, performance monitoring.
+10. **DNS Record Builders (advanced)** — add BIMI, MTA-STS, TLS-RPT wizards.
 
 ---
 
