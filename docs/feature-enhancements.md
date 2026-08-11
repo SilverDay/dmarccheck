@@ -3,13 +3,13 @@
 **Status:** Backlog / post-v1 ideas  
 **Scope:** Quality-of-life, operational excellence, and scaling improvements for larger deployments.
 
-The core project is [feature-complete against the spec](../README.md#whats-implemented). This document captures ideas for incremental enhancements that would improve the tool for broader adoption or team-scale operations, without scope-creeping the original v1.
+The core project is [feature-complete against the spec](../README.md#whats-implemented). This document captures ideas for incremental enhancements that would improve the tool for broader adoption or tier-down to smaller/solo operators.
 
 ---
 
 ## 1. REST API Endpoint Layer
 
-**Motivation:** While the web UI is the primary interface, programmatic access enables integration with external tooling (Slack bots, custom monitoring dashboards, SOCs, external ticketing systems) without exposing the authentication layer.
+**Motivation:** While the web UI is the primary interface, programmatic access enables integration with external tooling (Slack bots, custom monitoring dashboards, SOCs, external ticketing systems) without polling the UI.
 
 **Scope:**
 - Read-only endpoints for:
@@ -58,7 +58,7 @@ old.example.com,,,1
 
 ## 3. Report Filtering, Search & Export
 
-**Motivation:** The dashboard shows per-domain drill-down, but teams doing forensics or compliance audits often need "show me all unknown-source records from the last 30 days across all domains" and the ability to export for spreadsheet-based workflows.
+**Motivation:** The dashboard shows per-domain drill-down, but teams doing forensics or compliance audits often need "show me all unknown-source records from the last 30 days across all domains" and to export for external analysis or regulatory submission.
 
 **Scope:**
 - Dashboard enhancements:
@@ -372,6 +372,63 @@ Onboarding 50 domains. Default sequential mode would take ~1 hour.
 
 ---
 
+## 16. Build-Wizard / First-Run Setup
+
+**Motivation:** New deployments face friction: manually creating the database, running migrations, editing `config.php`, setting up IMAP accounts, and performing initial health checks. A **guided wizard** accelerates onboarding for self-hosted deployments and simplifies documentation.
+
+**Scope:**
+- Browser-based setup wizard (pre-login, available only before any domain is onboarded):
+  - **Step 1: Welcome** — display system requirements (PHP 8.3+, MariaDB 10.11+, Apache/Nginx, `dig`/`host` installed) and a "start" button.
+  - **Step 2: Database Connection** — form for DB host, port, username, password. Test connection; offer auto-create database if DB doesn't exist and user has root access (optional, with fallback to manual setup docs).
+  - **Step 3: Run Migrations** — display the list of pending migrations from `db/migrations/*.sql` and run them. Show progress + success/error for each.
+  - **Step 4: Config Setup** — form for:
+    - IMAP server (host, port, username, password, TLS/SSL mode).
+    - SMTP server (host, port, username, password for outbound alerts).
+    - "From" email address and display name for alerts.
+    - Site name and admin email (for high-level contact).
+    - Optional: toggle for community threat reporting (if §10.8 is implemented).
+    - Save to `config/config.php` (mode `0640`) with validation (no write if file already exists).
+  - **Step 5: Create First Admin User** — form for name, email, password (or passkey creation, if supported). Generates a Super Admin account to bootstrap RBAC.
+  - **Step 6: Optional: Seed Test Domains** — offer to load `db/seed-domains.sql` (the 10 example domains) or skip to start fresh.
+  - **Step 7: Summary** — recap what was configured, link to first login, and short intro tour (optionally embed the DMARC 101 help system here).
+  - **On completion:** flag the setup as complete (e.g., `settings.setup_complete = true` or a lock file in `config/`) so the wizard doesn't re-run.
+
+- **Features:**
+  - Validation at each step (domain reachability for IMAP/SMTP, DB connectivity, file permissions).
+  - Rollback on error: if a step fails, show the error and allow retry (don't corrupt state partway).
+  - Skip buttons (optional): for experienced operators who prefer CLI / manual `config.php` editing. If skipped, wizard marks the phase as "configured externally" and resumes later.
+  - Progress indicator (e.g., step N/7).
+  - Accessibility: screen-reader friendly, keyboard-navigable.
+
+- **Deployment notes:**
+  - Wizard is accessible only before setup completion OR via a Super Admin "re-run setup" option (for re-configuration).
+  - Wizard requests are **not** rate-limited during initial setup; add rate-limiting only after login is enabled.
+  - Wizard output (errors, connection details) is logged to a setup-specific log file (not the main audit log, since the audit system isn't ready yet).
+
+**Example user journey:**
+```
+1. Deploy Docker / VPS instance.
+2. Navigate to https://dmarc.example.com (first access).
+3. Presented with setup wizard (Step 1: Welcome).
+4. Complete IMAP/SMTP/database/admin setup in 5–10 minutes, without touching CLI or config files.
+5. After wizard: redirected to login page with admin credentials.
+6. Log in, add first domains, health checks run automatically.
+→ System ready for ingestion within 30 minutes total.
+```
+
+**Scope note:** wizard is **optional** — teams deploying via CLI (Docker Compose, Kubernetes) can skip it and run migrations + config setup manually. Wizard improves self-hosted adoption by removing installation friction.
+
+**Effort:** Medium. Requires:
+- Multi-step form UI (simple state machine in JS or server-side sessions).
+- Database and IMAP/SMTP validation logic (can reuse existing connection code).
+- Migration runner (likely exists in `bin/migrate.php`; wrap it for the UI).
+- Error handling and rollback strategy.
+- Setup completion flag + permission check.
+
+**Priority:** High for v1.1 (accelerates adoption); low technical risk (mostly UI work + reuse of existing validation).
+
+---
+
 ## Decision Matrix: Priority & Effort
 
 | Feature | Effort | User Impact | Suggested Phase |
@@ -391,23 +448,25 @@ Onboarding 50 domains. Default sequential mode would take ~1 hour.
 | TLS-RPT forwarding | M–H | Low (niche) | 2.0+ |
 | Dark mode | L | Low (UX polish) | 1.3 |
 | Staggered health checks | M–H | Medium (large deployments) | 1.2–1.3 |
+| Build-Wizard | M | High (adoption/onboarding) | 1.1 |
 
 ---
 
 ## Recommendations for v1.1
 
 **Quick wins** (start here):
-1. **Batch onboarding** — enables consulting/hosting use cases immediately.
-2. **Report filtering & export** — unblocks compliance workflows.
-3. **Webhook alerting** — plugs into existing team tooling (Slack, Teams).
+1. **Build-Wizard** — removes installation friction, enables one-click self-hosted deployments.
+2. **Batch onboarding** — enables consulting/hosting use cases immediately.
+3. **Report filtering & export** — unblocks compliance workflows.
+4. **Webhook alerting** — plugs into existing team tooling (Slack, Teams).
 
 **High-value, medium effort:**
-4. **Audit-log search** — compliance teams need it.
-5. **SPF/DKIM snippets** — speeds remediation feedback loop.
-6. **REST API** — enables external integrations + CLI tooling.
+5. **Audit-log search** — compliance teams need it.
+6. **SPF/DKIM snippets** — speeds remediation feedback loop.
+7. **REST API** — enables external integrations + CLI tooling.
 
 **Nice-to-have / polish:**
-7. Custom alerting rules, domain comparison, policy dry-run, backup UI, dark mode.
+8. Custom alerting rules, domain comparison, policy dry-run, backup UI, dark mode.
 
 ---
 
