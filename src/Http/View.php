@@ -38,13 +38,17 @@ final class View
         echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
            . '<meta name="viewport" content="width=device-width, initial-scale=1">'
            . '<title>' . self::e($title) . ' — DMARC Analyzer</title>'
-           . '<link rel="stylesheet" href="/assets/app.css"></head><body>';
+           . '<link rel="stylesheet" href="/assets/app.css">'
+           . '<!-- must stay blocking, no defer/async — see public/assets/theme-init.js -->'
+           . '<script src="/assets/theme-init.js"></script>'
+           . '</head><body>';
 
         echo '<header class="topbar"><a class="brand" href="/">' . self::icon('shield') . 'DMARC Analyzer</a>';
 
+        echo '<div class="topnav">';
+
         if ($user !== null) {
-            echo '<div class="topnav">'
-               . '<a href="/">Domains</a>';
+            echo '<a href="/">Domains</a>';
 
             if (Roles::atLeast($user->role, Roles::ADMIN)) {
                 echo '<a href="/admin/known-senders">Allowlist</a>';
@@ -66,8 +70,11 @@ final class View
                . self::csrfField($csrfToken)
                . '<button type="submit" class="logout-btn" title="Log out" aria-label="Log out">'
                . self::icon('logout') . '</button></form>'
-               . '</div></div>';
+               . '</div>';
         }
+
+        echo self::themeToggle();
+        echo '</div>';
 
         echo '</header>';
 
@@ -77,7 +84,7 @@ final class View
             echo '<p class="flash">' . self::e($flash) . '</p>';
         }
 
-        echo $bodyHtml . '</main></body></html>';
+        echo $bodyHtml . '</main><script src="/assets/theme.js"></script></body></html>';
     }
 
     public static function e(string $value): string
@@ -109,6 +116,25 @@ final class View
     {
         return '<button type="button" class="help-trigger" data-help-slug="' . self::e($slug) . '" aria-label="' . self::e($ariaLabel) . '">'
             . self::icon('help-circle') . '</button>';
+    }
+
+    /**
+     * Light/dark toggle. Both icons are always rendered; app.css shows/hides
+     * the right one off data-theme so it's correct from first paint with no
+     * JS-timing dependency. public/assets/theme-init.js sets data-theme
+     * before body paint (FOUC avoidance); public/assets/theme.js wires this
+     * button's click and corrects aria-pressed/aria-label once loaded, since
+     * the server can't know the stored localStorage preference. Builds its
+     * own <svg> markup rather than calling self::icon() twice, so the CSS
+     * class needed to distinguish/swap the two icons doesn't have to be
+     * added to that method's output for every other of its call sites.
+     */
+    public static function themeToggle(): string
+    {
+        return '<button type="button" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark theme">'
+            . '<svg class="icon i-sun" aria-hidden="true"><use href="/assets/icons.svg#i-sun"/></svg>'
+            . '<svg class="icon i-moon" aria-hidden="true"><use href="/assets/icons.svg#i-moon"/></svg>'
+            . '</button>';
     }
 
     /**
