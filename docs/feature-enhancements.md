@@ -185,16 +185,13 @@ Domain at p=none with R7 ("safe to move to quarantine").
 
 ---
 
-## 14. Dark Mode
+## 14. Dark Mode — Shipped 2026-08-12
 
 **Motivation:** Minor UX polish; respect `prefers-color-scheme` and add a manual toggle.
 
-**Scope:**
-- CSS: dark-mode palette (backgrounds, text, borders, chart colors) — test against the inline-SVG trend chart and icon sprites for contrast.
-- UI: toggle in top-right corner or user settings.
-- Storage: per-user preference in `users` table (or localStorage for unauthenticated help pages).
+**Built as:** a topbar toggle (`View::themeToggle()`) backed by `localStorage` (no DB migration, no per-user server round-trip — works identically on the public landing/help pages and the authenticated dashboard). `public/assets/theme-init.js` is a blocking `<head>` script that applies the stored choice before body paint (FOUC avoidance under the app's inline-script-free CSP); `public/assets/theme.js` wires the click handler and `aria-pressed`/`aria-label`. `app.css`'s existing `prefers-color-scheme` dark palette is preserved as the system-default fallback; an explicit choice (`data-theme="light"`/`"dark"` on `<html>`) overrides it. New `i-sun`/`i-moon` icons added to `public/assets/icons.svg`.
 
-**Effort:** Low. Mostly CSS + minimal JS.
+**Effort:** Low, as scoped. Commit `ba291c0`.
 
 ---
 
@@ -256,7 +253,7 @@ These are reasonable ideas for a multi-tenant SaaS or a consulting/hosting-provi
 | REST API | M | Medium (integrations) | 1.2 |
 | Policy dry-run | L–M | Medium (safer deployments) | 1.2 |
 | Custom alerting rules | L | Medium (ops tuning) | 1.2 |
-| Dark mode | L | Low (UX polish) | 1.2–1.3 |
+| ~~Dark mode~~ | L | Low (UX polish) | Shipped 2026-08-12 |
 | DNS Record Builders | M–H | Medium (overlaps #9 — do #9 first) | 1.3, re-evaluate |
 | Build-Wizard / First-Run Setup | M (UI) / L (CLI) | Medium | Re-scope to CLI-only before building |
 | Parser test corpus | M | Low (development) | 1.3 |
@@ -276,7 +273,8 @@ These are reasonable ideas for a multi-tenant SaaS or a consulting/hosting-provi
 5. **REST API** — read-only, API-key-gated; scope down from "SOCs/ticketing systems" framing to what this team's own tooling actually needs.
 6. **Policy dry-run** — safer policy changes.
 7. **Custom alerting rules** — thresholds are already parameterized in `bin/alert.php`, just needs an admin UI.
-8. **Dark mode** — cheap, low-risk polish.
+
+~~8. Dark mode~~ — shipped 2026-08-12, see item #14.
 
 ### Needs a decision before scoping further
 - **DNS Record Builders** — merge scope with SPF/DKIM snippets (#9) rather than building both.
