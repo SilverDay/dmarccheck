@@ -19,6 +19,19 @@ final class R8RuleTest extends TestCase
         self::assertSame('R8', $findings[0]->ruleId);
     }
 
+    public function testTestingAndPercentageTagsDoNotReplaceTheConfiguredPolicyLevel(): void
+    {
+        $context = ContextFactory::make(
+            currentPublishedPolicy: 'p=quarantine; pct=25; t=y',
+            targetPolicy: 'p=reject',
+        );
+
+        $findings = (new R8Rule())->evaluate($context);
+
+        self::assertCount(1, $findings);
+        self::assertSame('p=quarantine; pct=25; t=y', $findings[0]->evidence['current_policy']);
+    }
+
     public function testDoesNotFireWhenAKnownSenderIsFailing(): void
     {
         $stat    = SourceStatFactory::make(knownLabel: 'Corporate relay', bothFailedCount: 1);

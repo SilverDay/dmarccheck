@@ -65,8 +65,6 @@ final class AuditLogController
             . '<th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Source IP</th><th>Detail</th>'
             . '</tr></thead><tbody>' . ($rows !== '' ? $rows : '<tr><td colspan="6" class="empty">No matching entries.</td></tr>') . '</tbody></table></div></div>';
 
-        $body .= '<script src="/assets/help.js"></script>';
-
         View::render('Audit log', $body, $user, $this->auth->csrfToken());
     }
 }

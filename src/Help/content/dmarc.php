@@ -54,7 +54,7 @@ return [
         'The pct tag applies your quarantine/reject policy to only a percentage of failing mail, letting you roll out enforcement gradually.',
         '<p><code>pct=</code> (0-100, default 100) tells receivers to apply the DMARC policy (<code>quarantine</code> or <code>reject</code>) to only that percentage of messages that would otherwise be affected; the rest fall back to the next weaker policy. For example <code>p=reject; pct=25</code> rejects roughly a quarter of failing mail and lets the other three quarters through, so you can watch for unexpected breakage before committing fully.</p>'
             . '<p><code>pct=</code> has no effect at <code>p=none</code>, since there is no enforcement to apply partially.</p>'
-            . '<p>Under <a href="/help/article?slug=dmarcbis-overview">DMARCbis</a> (RFC 9989), <code>pct=</code> was removed as a defined tag — see <a href="/help/article?slug=dmarcbis-deprecated-tags">deprecated tags</a> for what replaces it. This isn\'t urgent: a record still publishing <code>pct=</code> keeps working exactly as before, and this tool\'s health check offers a one-click DNS fix to drop it whenever you\'re ready.</p>',
+            . '<p>Under <a href="/help/article?slug=dmarcbis-overview">DMARCbis</a> (RFC 9989), <code>pct=</code> was removed as a defined tag; current-spec receivers ignore it and may apply the full policy instead of the old percentage. The <code>t=y</code> test mode is not a percentage substitute. See <a href="/help/article?slug=dmarcbis-deprecated-tags">deprecated tags</a> before changing a record with <code>pct&lt;100</code>; this tool only offers a one-click removal where it cannot infer an enforcement increase.</p>',
         ['RFC 7489 §6.3'],
     ),
     new HelpArticle(

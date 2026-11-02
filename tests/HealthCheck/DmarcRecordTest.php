@@ -46,12 +46,16 @@ final class DmarcRecordTest extends TestCase
     /** DMARCbis (RFC 9989) additions — docs/feature-dmarcbis.md Phase 1. */
     public function testParsesDmarcbisTags(): void
     {
-        $record = DmarcRecord::parse('v=DMARC1; p=reject; np=reject; psd=n; t=y');
+        $record = DmarcRecord::parse('v=DMARC1; p=reject; np=reject; psd=n; t=y; rf=afrf; ri=86400; fo=1:d');
 
         self::assertNotNull($record);
         self::assertSame('reject', $record->nonExistentSubdomainPolicy);
         self::assertSame('n', $record->psd);
         self::assertSame('y', $record->testing);
+        self::assertSame('afrf', $record->reportFormat);
+        self::assertSame('86400', $record->reportInterval);
+        self::assertSame('1:d', $record->failureOptions);
+        self::assertStringContainsString('psd=n', $record->toPolicyString());
     }
 
     public function testDmarcbisTagsAreNullWhenAbsent(): void
@@ -62,6 +66,24 @@ final class DmarcRecordTest extends TestCase
         self::assertNull($record->nonExistentSubdomainPolicy);
         self::assertNull($record->psd);
         self::assertNull($record->testing);
+        self::assertNull($record->reportFormat);
+        self::assertNull($record->reportInterval);
+        self::assertNull($record->failureOptions);
+    }
+
+    public function testDistinguishesPctFromTestingModeAndValidatesNewTagValues(): void
+    {
+        $record = DmarcRecord::parse('v=DMARC1; p=reject; pct=25; np=quarantine; psd=y; t=y');
+
+        self::assertNotNull($record);
+        self::assertSame(25, $record->pct);
+        self::assertSame('y', $record->testing);
+        self::assertSame([], $record->invalidDmarcbisTags());
+
+        $invalid = DmarcRecord::parse('v=DMARC1; p=reject; np=full; psd=u; t=maybe');
+
+        self::assertNotNull($invalid);
+        self::assertSame(['np' => 'full', 'psd' => 'u', 't' => 'maybe'], $invalid->invalidDmarcbisTags());
     }
 
     public function testToPolicyStringIncludesDmarcbisTagsInReportParserOrder(): void

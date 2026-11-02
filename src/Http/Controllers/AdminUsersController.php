@@ -342,8 +342,6 @@ final class AdminUsersController
             $body .= '<script src="/assets/webauthn.js"></script>';
         }
 
-        $body .= '<script src="/assets/help.js"></script>';
-
         View::render('Users', $body, $actor, $csrf, $flash);
     }
 

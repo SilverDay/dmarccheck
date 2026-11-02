@@ -107,10 +107,9 @@ final class HealthCheckRepository
 
     /**
      * How many active domains' latest DMARC health-check result has a
-     * DMARCbis-relevant finding — still publishing the RFC 9989-removed
-     * `pct=` tag, or covered only via organizational-domain inheritance
-     * (docs/feature-dmarcbis.md Phase 5). A lightweight overview-dashboard
-     * count; latestForDomain() is the per-domain source of full detail.
+     * DMARCbis readiness item requiring attention: a failed/unknown DMARC
+     * result, deprecated `pct=`/`rf=`/`ri=`, or coverage via inheritance.
+     * The per-domain readiness card is the source of full detail.
      *
      * JSON_VALUE() (not JSON_EXTRACT()) is required here — JSON_EXTRACT()
      * returns a JSON *null* scalar (SQL-non-NULL, `IS NOT NULL` is TRUE for
@@ -131,7 +130,10 @@ final class HealthCheckRepository
                JOIN domains d ON d.id = hc.domain_id AND d.active = 1
                JOIN health_check_items hci ON hci.check_id = hc.id
               WHERE hci.check_name = 'dmarc'
-                AND (JSON_VALUE(hci.detail_json, '$.pct') IS NOT NULL
+                AND (hci.status IN ('fail', 'error')
+                  OR JSON_VALUE(hci.detail_json, '$.pct') IS NOT NULL
+                  OR JSON_VALUE(hci.detail_json, '$.rf') IS NOT NULL
+                  OR JSON_VALUE(hci.detail_json, '$.ri') IS NOT NULL
                   OR JSON_VALUE(hci.detail_json, '$.org_domain') IS NOT NULL)"
         )->fetchColumn();
     }

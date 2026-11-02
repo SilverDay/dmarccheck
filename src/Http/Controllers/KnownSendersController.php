@@ -153,8 +153,6 @@ final class KnownSendersController
             . '<button type="submit" class="btn btn-primary btn-block">Add rule</button>'
             . '</form></div></div>';
 
-        $body .= '<script src="/assets/help.js"></script>';
-
         View::render('Allowlist', $body, $user, $csrf, $flash);
     }
 

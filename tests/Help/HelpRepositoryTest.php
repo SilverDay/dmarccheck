@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Help;
 
+use App\Help\HelpArticle;
 use App\Help\HelpRepository;
 use PHPUnit\Framework\TestCase;
 
@@ -28,6 +29,28 @@ final class HelpRepositoryTest extends TestCase
         $repo = new HelpRepository(HelpRepository::defaultContentFiles());
 
         self::assertNull($repo->get('does-not-exist'));
+    }
+
+    public function testSearchMatchesTitlesAndSummariesWithoutCaseSensitivity(): void
+    {
+        $repo = new HelpRepository(HelpRepository::defaultContentFiles());
+
+        self::assertContains('dmarc-overview', array_map(
+            static fn (HelpArticle $article): string => $article->slug,
+            $repo->search('  DMARC  '),
+        ));
+        self::assertContains('known-vs-unknown', array_map(
+            static fn (HelpArticle $article): string => $article->slug,
+            $repo->search('source IP'),
+        ));
+    }
+
+    public function testSearchReturnsNoResultsForEmptyOrUnmatchedQueries(): void
+    {
+        $repo = new HelpRepository(HelpRepository::defaultContentFiles());
+
+        self::assertSame([], $repo->search('   '));
+        self::assertSame([], $repo->search('no article should contain this phrase'));
     }
 
     public function testByCategoryGroupsArticlesUnderTheirOwnCategory(): void

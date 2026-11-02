@@ -22,6 +22,20 @@ final class R7RuleTest extends TestCase
         self::assertSame('R7', $findings[0]->ruleId);
     }
 
+    public function testUsesTheConfiguredQuarantineTargetWithoutTreatingPctAsTheTarget(): void
+    {
+        $context = ContextFactory::make(
+            currentPublishedPolicy: 'p=none; pct=50; t=y',
+            targetPolicy: 'p=quarantine',
+        );
+
+        $findings = (new R7Rule())->evaluate($context);
+
+        self::assertCount(1, $findings);
+        self::assertSame('p=none; pct=50; t=y', $findings[0]->evidence['current_policy']);
+        self::assertSame('p=quarantine', $findings[0]->evidence['target_policy']);
+    }
+
     public function testDoesNotFireWhenAKnownSenderIsFailing(): void
     {
         $stat    = SourceStatFactory::make(knownLabel: 'Corporate relay', bothFailedCount: 1);

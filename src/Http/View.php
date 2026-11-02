@@ -63,6 +63,9 @@ final class View
                    . '</span>';
             }
 
+            echo '<button type="button" class="help-panel-toggle" aria-expanded="false" aria-controls="page-help-panel">'
+               . 'Page help</button>';
+
             echo '<div class="who">'
                . '<a class="id" href="/account/security" title="Security settings"><span class="email">' . self::e($user->email) . '</span>'
                . '<span class="role">' . self::e(str_replace('_', ' ', $user->role)) . '</span></a>'
@@ -78,13 +81,27 @@ final class View
 
         echo '</header>';
 
+        if ($user !== null) {
+            echo '<aside id="page-help-panel" class="help-panel" aria-label="Page help" hidden>'
+               . '<div class="help-panel-head"><h2>Page help</h2>'
+               . '<button type="button" class="help-panel-close" aria-label="Close page help">&times;</button></div>'
+               . '<div class="help-panel-content" aria-live="polite"><p class="card-sub">Loading relevant articles…</p></div>'
+               . '</aside>';
+        }
+
         echo '<main>';
 
         if ($flash !== null && $flash !== '') {
             echo '<p class="flash">' . self::e($flash) . '</p>';
         }
 
-        echo $bodyHtml . '</main><script src="/assets/theme.js"></script></body></html>';
+        echo $bodyHtml . '</main><script src="/assets/theme.js"></script>';
+
+        if ($user !== null) {
+            echo '<script src="/assets/help.js"></script>';
+        }
+
+        echo '</body></html>';
     }
 
     public static function e(string $value): string

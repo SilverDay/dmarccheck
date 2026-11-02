@@ -135,17 +135,53 @@ final class ReportParser
         $authResults = $this->firstChild($node, 'auth_results');
 
         return [
-            'source_ip'   => $sourceIp,
-            'count'       => max(0, (int) $this->text($row, 'count')),
-            'disposition' => $this->enum($this->text($evaluated, 'disposition'), ['none', 'quarantine', 'reject'], 'none'),
-            'dkim_result' => $this->enum($this->text($evaluated, 'dkim'), ['pass', 'fail'], 'fail'),
-            'spf_result'  => $this->enum($this->text($evaluated, 'spf'), ['pass', 'fail'], 'fail'),
-            'header_from' => strtolower($this->text($identifiers, 'header_from')),
+            'source_ip'               => $sourceIp,
+            'count'                   => max(0, (int) $this->text($row, 'count')),
+            'disposition'             => $this->enum($this->text($evaluated, 'disposition'), ['none', 'quarantine', 'reject'], 'none'),
+            'dkim_result'             => $this->enum($this->text($evaluated, 'dkim'), ['pass', 'fail'], 'fail'),
+            'spf_result'              => $this->enum($this->text($evaluated, 'spf'), ['pass', 'fail'], 'fail'),
+            'policy_override_reasons' => $this->extractPolicyOverrideReasons($evaluated),
+            'header_from'             => strtolower($this->text($identifiers, 'header_from')),
             // DMARCbis (RFC 9990) additions — absent on every classic-era report.
             'envelope_from' => strtolower($this->text($identifiers, 'envelope_from')) ?: null,
             'envelope_to'   => strtolower($this->text($identifiers, 'envelope_to')) ?: null,
             'auth_results'  => $this->extractAuthResults($authResults),
         ];
+    }
+
+    /**
+     * RFC 9990 §3.1.6 defines policy_test_mode as a policy_evaluated/reason/type,
+     * not as a top-level report field. Preserve all reason types/comments.
+     *
+     * @return list<array{type: string, comment: ?string}>
+     */
+    private function extractPolicyOverrideReasons(?\DOMNode $evaluated): array
+    {
+        if ($evaluated === null) {
+            return [];
+        }
+
+        $reasons = [];
+
+        foreach ($evaluated->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->nodeName !== 'reason') {
+                continue;
+            }
+
+            $type = $this->text($child, 'type');
+
+            if ($type === '') {
+                continue;
+            }
+
+            $comment   = $this->text($child, 'comment');
+            $reasons[] = [
+                'type'    => $type,
+                'comment' => $comment !== '' ? $comment : null,
+            ];
+        }
+
+        return $reasons;
     }
 
     /**

@@ -30,6 +30,9 @@ final readonly class DmarcRecord
         public ?string $nonExistentSubdomainPolicy = null,
         public ?string $psd = null,
         public ?string $testing = null,
+        public ?string $reportFormat = null,
+        public ?string $reportInterval = null,
+        public ?string $failureOptions = null,
     ) {
     }
 
@@ -63,6 +66,9 @@ final readonly class DmarcRecord
             isset($tags['np']) ? strtolower($tags['np']) : null,
             isset($tags['psd']) ? strtolower($tags['psd']) : null,
             isset($tags['t']) ? strtolower($tags['t']) : null,
+            $tags['rf'] ?? null,
+            $tags['ri'] ?? null,
+            $tags['fo'] ?? null,
         );
     }
 
@@ -82,7 +88,25 @@ final readonly class DmarcRecord
         return array_values(array_unique($domains));
     }
 
-    /** Same tag order/format ReportParser::formatPolicy() writes from report data, so both writers agree. */
+    /** @return array<string, string> invalid DMARCbis tags keyed by tag name */
+    public function invalidDmarcbisTags(): array
+    {
+        $invalid = [];
+
+        foreach ([
+            'np'  => [$this->nonExistentSubdomainPolicy, ['none', 'quarantine', 'reject']],
+            'psd' => [$this->psd, ['y', 'n']],
+            't'   => [$this->testing, ['y', 'n']],
+        ] as $tag => [$value, $allowed]) {
+            if ($value !== null && !\in_array($value, $allowed, true)) {
+                $invalid[$tag] = $value;
+            }
+        }
+
+        return $invalid;
+    }
+
+    /** Canonical DNS policy summary; RFC 9990's report schema does not include the psd= tag. */
     public function toPolicyString(): string
     {
         $parts = [];
@@ -91,6 +115,7 @@ final readonly class DmarcRecord
             'p'     => $this->policy,
             'sp'    => $this->subdomainPolicy,
             'np'    => $this->nonExistentSubdomainPolicy,
+            'psd'   => $this->psd,
             'pct'   => $this->pct,
             'adkim' => $this->adkim,
             'aspf'  => $this->aspf,

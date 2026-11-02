@@ -82,4 +82,38 @@ final class HelpCatalogCompletenessTest extends TestCase
             self::assertNotNull($this->repo->get($section), "Missing help article for \"{$section}\"");
         }
     }
+
+    public function testContextualHelpArticlesExist(): void
+    {
+        foreach ([
+            'hc-mx',
+            'hc-dnssec',
+            'hc-mta-sts',
+            'hc-tls-rpt',
+            'hc-bimi',
+            'hc-starttls',
+            'hc-dnsbl',
+            'hc-rhsbl',
+            'hc-fcrdns',
+            'hc-report-auth',
+        ] as $article) {
+            self::assertNotNull($this->repo->get($article), "Missing contextual help article \"{$article}\"");
+        }
+    }
+
+    public function testDmarcbisCalloutArticlesExist(): void
+    {
+        foreach ([
+            'dmarcbis-overview',
+            'dmarcbis-org-domain',
+            'dmarcbis-deprecated-tags',
+            'dmarcbis-report-fields',
+        ] as $article) {
+            self::assertNotNull($this->repo->get($article), "Missing DMARCbis help article \"{$article}\"");
+        }
+
+        $deprecatedTags = $this->repo->get('dmarcbis-deprecated-tags');
+        self::assertNotNull($deprecatedTags);
+        self::assertStringContainsString('classic receiver honored a lower', $deprecatedTags->body);
+    }
 }

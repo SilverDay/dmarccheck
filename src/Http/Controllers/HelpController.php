@@ -31,7 +31,8 @@ final class HelpController
     {
         $user = $this->auth->currentUser();
         $body = '<div class="page-head"><div><h1>Help</h1>'
-            . '<div class="sub">DMARC 101 — explanations for every term, finding, and recommendation this tool surfaces.</div></div></div>';
+            . '<div class="sub">DMARC 101 — explanations for every term, finding, and recommendation this tool surfaces.</div></div></div>'
+            . $this->searchForm();
 
         foreach ($this->help->byCategory() as $category => $articles) {
             $items = '';
@@ -48,6 +49,46 @@ final class HelpController
         }
 
         View::render('Help', $body, $user);
+    }
+
+    public function search(): void
+    {
+        $user        = $this->auth->currentUser();
+        $rawQuery    = $_GET['q'] ?? '';
+        $invalidType = !\is_string($rawQuery);
+        $query       = $invalidType ? '' : trim($rawQuery);
+        $body        = '<div class="page-head"><div><h1>Search help</h1>'
+            . '<div class="sub"><a href="/help">&larr; Browse all help articles</a></div></div></div>'
+            . $this->searchForm($query);
+
+        if ($invalidType) {
+            http_response_code(400);
+            $body .= '<p class="error">Search query must be a single text value.</p>';
+        } elseif ($query === '') {
+            $body .= '<p class="card-sub">Enter a word or phrase to search article titles and summaries.</p>';
+        } elseif (mb_strlen($query) > 120) {
+            http_response_code(400);
+            $body .= '<p class="error">Search terms must be 120 characters or fewer.</p>';
+        } else {
+            $articles = $this->help->search($query);
+
+            if ($articles === []) {
+                $body .= '<p class="card-sub">No help articles matched “' . View::e($query) . '”.</p>';
+            } else {
+                $items = '';
+
+                foreach ($articles as $article) {
+                    $items .= '<div class="list-row"><div class="meta"><div>'
+                        . '<div class="name"><a href="' . View::e($this->articleUrl($article->slug)) . '">' . View::e($article->title) . '</a></div>'
+                        . '<div class="detail">' . View::e($article->summary) . '</div>'
+                        . '</div></div></div>';
+                }
+
+                $body .= '<div class="table-card help-index-card">' . $items . '</div>';
+            }
+        }
+
+        View::render('Search help', $body, $user);
     }
 
     public function show(): void
@@ -91,6 +132,97 @@ final class HelpController
             'summary' => $article->summary,
             'moreUrl' => $this->articleUrl($article->slug),
         ], JSON_THROW_ON_ERROR);
+    }
+
+    public function context(AuthUser $user): void
+    {
+        $rawPath = $_GET['path'] ?? '';
+        $path    = \is_string($rawPath) ? $rawPath : '';
+        $slugs   = match (true) {
+            $path === '/' => [
+                'page-domains',
+                'dmarc-overview',
+                'card-pass-fail-chart',
+                'known-vs-unknown',
+            ],
+            $path === '/domain' => [
+                'page-domain-detail',
+                'card-policy',
+                'policy-current-published',
+                'policy-approved-baseline',
+                'policy-target',
+                'card-pass-fail-chart',
+                'card-health-check',
+                'hc-status-pass',
+                'hc-status-warn',
+                'hc-status-fail',
+                'hc-status-error',
+                'hc-status-info',
+                'hc-mx',
+                'hc-dnssec',
+                'hc-mta-sts',
+                'hc-tls-rpt',
+                'hc-bimi',
+                'hc-starttls',
+                'hc-dnsbl',
+                'hc-rhsbl',
+                'hc-fcrdns',
+                'hc-report-auth',
+                'card-sources',
+                'card-recommendations',
+                'card-recent-reports',
+                'rule-r1',
+                'rule-r2',
+                'rule-r3',
+                'rule-r4',
+                'rule-r5',
+                'rule-r6',
+                'rule-r7',
+                'rule-r8',
+                'rule-r9',
+                'rule-r10',
+                'rule-r11',
+                'rule-r12',
+            ],
+            $path === '/domain/report' => [
+                'page-report-detail',
+                'dmarc-aggregate-reports',
+                'dkim-overview',
+                'spf-overview',
+            ],
+            $path === '/admin/known-senders'    => ['page-allowlist', 'known-senders-allowlist'],
+            $path === '/admin/users'            => ['page-users', 'page-security'],
+            $path === '/admin/audit-log'        => ['page-audit-log'],
+            str_starts_with($path, '/account/') => ['page-security'],
+            default                             => ['dmarc-overview', 'spf-overview', 'dkim-overview'],
+        };
+        $articles = [];
+
+        foreach ($slugs as $slug) {
+            $article = $this->help->get($slug);
+
+            if ($article === null) {
+                throw new \LogicException("Contextual help references unknown article \"{$slug}\"");
+            }
+
+            $articles[] = [
+                'title'   => $article->title,
+                'summary' => $article->summary,
+                'url'     => $this->articleUrl($article->slug),
+            ];
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(['articles' => $articles], JSON_THROW_ON_ERROR);
+    }
+
+    private function searchForm(string $query = ''): string
+    {
+        return '<form method="get" action="/help/search" class="help-search-form">'
+            . '<label for="help-search-query">Search article titles and summaries</label>'
+            . '<div><input id="help-search-query" name="q" type="search" value="' . View::e($query) . '" maxlength="120">'
+            . '<button type="submit" class="btn btn-primary">Search</button></div>'
+            . '</form>';
     }
 
     private function renderReferences(HelpArticle $article): string

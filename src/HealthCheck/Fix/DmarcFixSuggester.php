@@ -7,13 +7,13 @@ namespace App\HealthCheck\Fix;
 /**
  * Pure, testable — operates only on the `detail` array DmarcCheck::run()
  * already computed. Missing-rua= reconstructs the existing record from
- * its already-parsed fields rather than clobbering it. Never suggests
+ * recognized parsed fields rather than clobbering those settings. Never suggests
  * advancing p=none — that's a policy decision backed by report evidence
  * (spec §10.6/R7/R8), not a mechanical DNS fix.
  *
- * Can return more than one fix at once — e.g. a domain missing rua= that
- * also still publishes the RFC 9989 (DMARCbis)-removed pct= tag gets both
- * fixes independently (docs/feature-dmarcbis.md Phase 3).
+ * A pct= removal fix is offered only when removal cannot increase the
+ * requested policy's scope: pct=100 or p=none. Lower enforcement percentages
+ * require a deliberate operator decision.
  */
 final class DmarcFixSuggester
 {
@@ -55,7 +55,10 @@ final class DmarcFixSuggester
             $fixes[] = self::missingRuaFix($domain, $detail, $policy, $mailFrom);
         }
 
-        if (isset($detail['pct']) && \is_int($detail['pct'])) {
+        if (isset($detail['pct']) && \is_int($detail['pct'])
+                                  && $detail['pct'] >= 0 && $detail['pct'] <= 100
+                                  && ($detail['pct'] === 100 || $policy === 'none')
+        ) {
             $fixes[] = self::dropPctFix($domain, $detail, $policy);
         }
 
@@ -71,6 +74,14 @@ final class DmarcFixSuggester
             $parts[] = 'sp=' . $detail['subdomain_policy'];
         }
 
+        if (!empty($detail['non_existent_subdomain_policy']) && \is_string($detail['non_existent_subdomain_policy'])) {
+            $parts[] = 'np=' . $detail['non_existent_subdomain_policy'];
+        }
+
+        if (!empty($detail['psd']) && \is_string($detail['psd'])) {
+            $parts[] = 'psd=' . $detail['psd'];
+        }
+
         if (isset($detail['pct']) && \is_int($detail['pct'])) {
             $parts[] = 'pct=' . $detail['pct'];
         }
@@ -83,21 +94,41 @@ final class DmarcFixSuggester
             $parts[] = 'aspf=' . $detail['aspf'];
         }
 
+        if (!empty($detail['testing']) && \is_string($detail['testing'])) {
+            $parts[] = 't=' . $detail['testing'];
+        }
+
+        foreach (['rf', 'ri'] as $tag) {
+            if (!empty($detail[$tag]) && \is_string($detail[$tag])) {
+                $parts[] = "$tag=" . $detail[$tag];
+            }
+        }
+
+        if (!empty($detail['fo']) && \is_string($detail['fo'])) {
+            $parts[] = 'fo=' . $detail['fo'];
+        }
+
         $parts[] = 'rua=mailto:' . $mailFrom;
+
+        $ruf = $detail['ruf'] ?? [];
+
+        if (\is_array($ruf) && $ruf !== []) {
+            $parts[] = 'ruf=mailto:' . implode(',', $ruf);
+        }
 
         return new HealthCheckFix(
             'DNS TXT record at _dmarc.' . $domain,
             '_dmarc.' . $domain,
             'TXT',
             implode('; ', $parts),
-            'Your existing record is missing rua=, so reports never reach this tool — this is your current record with that added, nothing else changed.',
+            'Your existing record is missing rua=, so reports never reach this tool — this adds the destination while retaining the policy and report tags this check recognizes.',
         );
     }
 
     /**
      * RFC 9989 (DMARCbis) removed pct= as a defined tag (docs/feature-dmarcbis.md
-     * D2/D3) — reconstructs the current record without it, keeping every
-     * other tag that's actually set, including the *existing* rua=
+     * D2/D3) — reconstructs the current record without it, keeping the
+     * other recognized tags, including the *existing* rua=
      * addresses verbatim (not $mailFrom — this fix isn't about adding
      * reporting, only dropping the removed tag).
      *
@@ -115,6 +146,10 @@ final class DmarcFixSuggester
             $parts[] = 'np=' . $detail['non_existent_subdomain_policy'];
         }
 
+        if (!empty($detail['psd']) && \is_string($detail['psd'])) {
+            $parts[] = 'psd=' . $detail['psd'];
+        }
+
         // pct= deliberately omitted — this is the whole point of this fix.
 
         if (!empty($detail['adkim']) && \is_string($detail['adkim'])) {
@@ -129,10 +164,26 @@ final class DmarcFixSuggester
             $parts[] = 't=' . $detail['testing'];
         }
 
+        foreach (['rf', 'ri'] as $tag) {
+            if (!empty($detail[$tag]) && \is_string($detail[$tag])) {
+                $parts[] = "$tag=" . $detail[$tag];
+            }
+        }
+
+        if (!empty($detail['fo']) && \is_string($detail['fo'])) {
+            $parts[] = 'fo=' . $detail['fo'];
+        }
+
         $rua = $detail['rua'] ?? [];
 
         if (\is_array($rua) && $rua !== []) {
             $parts[] = 'rua=mailto:' . implode(',', $rua);
+        }
+
+        $ruf = $detail['ruf'] ?? [];
+
+        if (\is_array($ruf) && $ruf !== []) {
+            $parts[] = 'ruf=mailto:' . implode(',', $ruf);
         }
 
         return new HealthCheckFix(
@@ -140,7 +191,7 @@ final class DmarcFixSuggester
             '_dmarc.' . $domain,
             'TXT',
             implode('; ', $parts),
-            'pct= was removed as a defined tag under RFC 9989 (DMARCbis) — this is your current record with it dropped, everything else unchanged. Not urgent, a good candidate for your next DNS edit.',
+            'pct= was removed as a defined tag under RFC 9989 (DMARCbis) — this drops it while retaining the other policy and report tags this check recognizes. Not urgent, a good candidate for your next DNS edit.',
         );
     }
 }

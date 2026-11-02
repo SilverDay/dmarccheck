@@ -452,7 +452,7 @@ final class SecurityController
             . '<p id="webauthn-error-register" class="error"></p>'
             . '</form></div>';
 
-        $body .= '</div><script src="/assets/webauthn.js"></script><script src="/assets/help.js"></script>';
+        $body .= '</div><script src="/assets/webauthn.js"></script>';
 
         View::render('Security settings', $body, $user, $csrf, $flash);
     }

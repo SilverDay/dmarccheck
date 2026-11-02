@@ -65,6 +65,21 @@ final class HelpRepository
         return array_values($this->bySlug);
     }
 
+    /** @return list<HelpArticle> */
+    public function search(string $query): array
+    {
+        $query = trim($query);
+
+        if ($query === '') {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $this->bySlug,
+            static fn (HelpArticle $article): bool => mb_stripos($article->title . ' ' . $article->summary, $query) !== false,
+        ));
+    }
+
     /** @return array<string, list<HelpArticle>> category => articles, insertion order preserved within each category */
     public function byCategory(): array
     {

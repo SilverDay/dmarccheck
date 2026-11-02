@@ -189,7 +189,9 @@ $router->get('/admin/audit-log', $auth->guard(Roles::SUPER_ADMIN, [$auditLogCont
 // --- Help system (docs/feature-helpsystem.md) — public articles, auth-gated tooltip fetch ---
 $router->get('/help', [$helpController, 'index']);
 $router->get('/help/article', [$helpController, 'show']);
+$router->get('/help/search', [$helpController, 'search']);
 $router->get('/help/inline', $auth->guard(Roles::READ_ONLY, [$helpController, 'inline']));
+$router->get('/help/context', $auth->guard(Roles::READ_ONLY, [$helpController, 'context']));
 
 // --- Dashboard (spec §7.1/§7.2/§7.3 — every view requires at least read-only) ---
 // "/" is the one route that isn't uniformly guarded: an active session sees

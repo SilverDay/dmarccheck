@@ -45,11 +45,13 @@ return [
         'card-dmarcbis-readiness',
         'The DMARCbis readiness section',
         $category,
-        'A checklist restating this domain\'s DMARC health check in DMARCbis (RFC 9989) terms: the deprecated pct= tag, organizational-domain coverage, and any new optional tags.',
-        '<p>This card always shows three lines, reusing the same DMARC health-check result above rather than running any new check:</p>'
-            . '<ul><li><strong>pct= tag</strong> — flagged if still published; see <a href="/help/article?slug=dmarcbis-deprecated-tags">deprecated tags</a>. The "Fix me" button on the health-check row above handles it.</li>'
+        'A checklist restating this domain\'s DMARC health check in DMARCbis (RFC 9989) terms: deprecated tags, organizational-domain coverage, and any new optional tags.',
+        '<p>This card always shows four lines, reusing the same DMARC health-check result above rather than running any new check:</p>'
+            . '<ul><li><strong>pct= tag</strong> — flagged if still published; see <a href="/help/article?slug=dmarcbis-deprecated-tags">deprecated tags</a>. A DNS fix is offered only where the value can be removed without an inferred enforcement increase.</li>'
+            . '<li><strong>rf=/ri= tags</strong> — flagged if legacy report-format or report-interval tags are still published; remove them at a future DNS edit.</li>'
             . '<li><strong>Organizational-domain coverage</strong> — whether this domain publishes its own record, inherits one via the <a href="/help/article?slug=dmarcbis-org-domain">DNS tree walk</a>, or has no coverage anywhere in its ancestry.</li>'
-            . '<li><strong>New optional tags</strong> — whichever of <code>np=</code>/<code>psd=</code>/<code>t=</code> this domain currently publishes; see <a href="/help/article?slug=dmarcbis-overview">DMARCbis overview</a>. None set is entirely normal today.</li></ul>',
+            . '<li><strong>New optional tags</strong> — whichever of <code>np=</code>/<code>psd=</code>/<code>t=</code> this domain currently publishes; invalid values are flagged for review. See <a href="/help/article?slug=dmarcbis-overview">DMARCbis overview</a>. None set is entirely normal today.</li></ul>'
+            . '<p>If the health check reports an error or cannot validate a policy record, the affected readiness lines say they could not be determined rather than treating unknown data as a pass or confirmed failure.</p>',
         [],
     ),
     new HelpArticle(

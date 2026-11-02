@@ -98,6 +98,127 @@
         openPopover(button, template.content.cloneNode(true), 'fix-popover');
     }
 
+    function setupPageHelp() {
+        var panel = document.getElementById('page-help-panel');
+
+        if (!panel) {
+            return;
+        }
+
+        var toggle = document.querySelector('.help-panel-toggle');
+        var close = panel.querySelector('.help-panel-close');
+        var content = panel.querySelector('.help-panel-content');
+
+        function setOpen(open) {
+            panel.hidden = !open;
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        toggle.addEventListener('click', function () {
+            setOpen(panel.hidden);
+        });
+        close.addEventListener('click', function () {
+            setOpen(false);
+            toggle.focus();
+        });
+
+        fetch('/help/context?path=' + encodeURIComponent(window.location.pathname), { credentials: 'same-origin' })
+            .then(function (resp) {
+                if (!resp.ok) {
+                    throw new Error('Page help could not be loaded.');
+                }
+
+                return resp.json();
+            })
+            .then(function (data) {
+                content.replaceChildren();
+
+                if (!Array.isArray(data.articles) || data.articles.length === 0) {
+                    var empty = document.createElement('p');
+                    empty.className = 'card-sub';
+                    empty.textContent = 'No contextual articles are available for this page.';
+                    content.appendChild(empty);
+
+                    return;
+                }
+
+                data.articles.forEach(function (article) {
+                    var item = document.createElement('article');
+                    item.className = 'help-panel-article';
+
+                    var heading = document.createElement('h3');
+                    var link = document.createElement('a');
+                    link.href = article.url;
+                    link.textContent = article.title;
+                    heading.appendChild(link);
+
+                    var summary = document.createElement('p');
+                    summary.textContent = article.summary;
+                    item.appendChild(heading);
+                    item.appendChild(summary);
+                    content.appendChild(item);
+                });
+            })
+            .catch(function () {
+                content.replaceChildren();
+                var error = document.createElement('p');
+                error.className = 'error';
+                error.textContent = 'Page help could not be loaded. Visit the Help page to browse all articles.';
+                content.appendChild(error);
+            });
+    }
+
+    function setupOnboardingGuide() {
+        var dialog = document.querySelector('.onboarding-dialog');
+
+        if (!dialog) {
+            return;
+        }
+
+        var domain = dialog.dataset.onboardingDomain;
+        var storageKey = 'dmarc-onboarding-dismissed:' + encodeURIComponent(domain);
+        var openButton = document.querySelector('[data-onboarding-open]');
+        var dismissButtons = dialog.querySelectorAll('[data-onboarding-dismiss]');
+
+        function isDismissed() {
+            try {
+                return window.localStorage.getItem(storageKey) === '1';
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function show() {
+            if (!dialog.open) {
+                dialog.showModal();
+            }
+        }
+
+        openButton.addEventListener('click', show);
+        dismissButtons.forEach(function (button) {
+            button.addEventListener('click', function () {
+                dialog.close();
+            });
+        });
+        dialog.addEventListener('close', function () {
+            try {
+                window.localStorage.setItem(storageKey, '1');
+            } catch (error) {
+                // The guide still works when browser storage is unavailable.
+            }
+        });
+
+        if (dialog.dataset.onboardingAutoOpen === '1') {
+            if (!isDismissed()) {
+                show();
+            }
+
+            var url = new URL(window.location.href);
+            url.searchParams.delete('onboarding');
+            window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.help-trigger, .fix-trigger').forEach(function (button) {
             button.setAttribute('aria-expanded', 'false');
@@ -146,6 +267,15 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
                 closePopover();
+
+                var panel = document.getElementById('page-help-panel');
+
+                if (panel && !panel.hidden) {
+                    panel.hidden = true;
+                    var toggle = document.querySelector('.help-panel-toggle');
+                    toggle.setAttribute('aria-expanded', 'false');
+                    toggle.focus();
+                }
             }
         });
 
@@ -154,5 +284,7 @@
         // same as most native browser tooltips do.
         window.addEventListener('scroll', closePopover, true);
         window.addEventListener('resize', closePopover);
+        setupPageHelp();
+        setupOnboardingGuide();
     });
 })();

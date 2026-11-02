@@ -111,7 +111,9 @@ final class ReportParserTest extends TestCase
           </policy_published>
           <record>
             <row><source_ip>192.0.2.1</source_ip><count>5</count>
-              <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated>
+              <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf>
+                <reason><type>policy_test_mode</type><comment>Testing policy applied</comment></reason>
+              </policy_evaluated>
             </row>
             <identifiers>
               <header_from>example.com</header_from>
@@ -130,6 +132,9 @@ final class ReportParserTest extends TestCase
         self::assertStringContainsString('t=y', $report->policyPublished);
         self::assertSame('bounce.example.com', $report->records[0]['envelope_from']);
         self::assertSame('rcpt.example.net', $report->records[0]['envelope_to']);
+        self::assertSame([
+            ['type' => 'policy_test_mode', 'comment' => 'Testing policy applied'],
+        ], $report->records[0]['policy_override_reasons']);
     }
 
     public function testDmarcbisFieldsAreNullWhenAbsent(): void
@@ -141,5 +146,33 @@ final class ReportParserTest extends TestCase
         self::assertNull($report->discoveryMethod);
         self::assertNull($report->records[0]['envelope_from']);
         self::assertNull($report->records[0]['envelope_to']);
+        self::assertSame([], $report->records[0]['policy_override_reasons']);
+    }
+
+    public function testParsesMultiplePolicyOverrideReasonsAndIgnoresMalformedReason(): void
+    {
+        $xml = <<<XML
+        <?xml version="1.0"?>
+        <feedback>
+          <report_metadata><org_name>test</org_name><report_id>1</report_id>
+            <date_range><begin>1</begin><end>2</end></date_range>
+          </report_metadata>
+          <policy_published><domain>example.com</domain><p>quarantine</p></policy_published>
+          <record><row><source_ip>192.0.2.1</source_ip><count>1</count>
+            <policy_evaluated><disposition>none</disposition><dkim>fail</dkim><spf>fail</spf>
+              <reason><type>local_policy</type><comment>Local exception</comment></reason>
+              <reason><type>trusted_forwarder</type></reason>
+              <reason><comment>Missing mandatory type</comment></reason>
+            </policy_evaluated>
+          </row><identifiers><header_from>example.com</header_from></identifiers></record>
+        </feedback>
+        XML;
+
+        $report = $this->parser->parse($xml);
+
+        self::assertSame([
+            ['type' => 'local_policy', 'comment' => 'Local exception'],
+            ['type' => 'trusted_forwarder', 'comment' => null],
+        ], $report->records[0]['policy_override_reasons']);
     }
 }

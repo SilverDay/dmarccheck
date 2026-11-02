@@ -58,7 +58,7 @@ final class OrgDomain
             if (\count($valid) === 1) {
                 $record = DmarcRecord::parse($valid[0]);
 
-                if ($record !== null) {
+                if ($record !== null && \in_array($record->policy, ['none', 'quarantine', 'reject'], true)) {
                     if ($record->psd === 'n') {
                         return new OrgDomainResult($target, $record, 'treewalk', $queried);
                     }

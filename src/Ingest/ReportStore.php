@@ -67,8 +67,8 @@ final class ReportStore
 
             $recordStmt = $this->pdo->prepare(
                 'INSERT INTO report_records
-                    (report_id, source_ip, `count`, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    (report_id, source_ip, `count`, disposition, dkim_result, spf_result, header_from, envelope_from, envelope_to, policy_override_reasons)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $authStmt = $this->pdo->prepare(
@@ -77,6 +77,12 @@ final class ReportStore
             );
 
             foreach ($report->records as $record) {
+                /** @var list<array{type: string, comment: ?string}> $policyOverrideReasons */
+                $policyOverrideReasons = $record['policy_override_reasons'] ?? [];
+                $policyOverrideJson    = $policyOverrideReasons === []
+                    ? null
+                    : json_encode($policyOverrideReasons, JSON_THROW_ON_ERROR);
+
                 $recordStmt->execute([
                     $reportRowId,
                     Ip::toBinary((string) $record['source_ip']),
@@ -87,6 +93,7 @@ final class ReportStore
                     ($record['header_from'] ?? '') !== '' ? $record['header_from'] : null,
                     $record['envelope_from'] ?? null,
                     $record['envelope_to']   ?? null,
+                    $policyOverrideJson,
                 ]);
 
                 $recordRowId = (int) $this->pdo->lastInsertId();

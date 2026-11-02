@@ -124,7 +124,7 @@ final class DomainController
 
         $this->audit->record($actor->id, 'domain.onboarded', $domain, $tally, $this->clientIp());
 
-        header('Location: /domain?' . http_build_query(['domain' => $domain]));
+        header('Location: /domain?' . http_build_query(['domain' => $domain, 'onboarding' => '1']));
     }
 
     public function runHealthCheck(AuthUser $actor): void
@@ -493,8 +493,6 @@ final class DomainController
                 . '</form></div></div>';
         }
 
-        $body .= '<script src="/assets/help.js"></script>';
-
         View::render('Domains', $body, $user, $this->auth->csrfToken(), $flash);
     }
 
@@ -598,15 +596,21 @@ final class DomainController
             return;
         }
 
-        $this->renderDrillDown($user, $domain);
+        $this->renderDrillDown($user, $domain, showOnboardingGuide: (($_GET['onboarding'] ?? '') === '1'));
     }
 
     /** @param array<string, mixed> $domain */
-    private function renderDrillDown(AuthUser $user, array $domain, ?string $flash = null, ?string $error = null): void
-    {
+    private function renderDrillDown(
+        AuthUser $user,
+        array $domain,
+        ?string $flash = null,
+        ?string $error = null,
+        bool $showOnboardingGuide = false,
+    ): void {
         $domainId = (int) $domain['id'];
         $sort     = (string) ($_GET['sort'] ?? 'volume');
         $label    = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
+        $health   = $this->healthChecks->latestForDomain($domainId);
 
         $notice = (int) $domain['active'] !== 1
             ? '<p class="error">This domain is deactivated — excluded from ingestion, health checks, analysis, and alerting. Historical data below is retained and still browsable.</p>'
@@ -614,16 +618,16 @@ final class DomainController
 
         $body = $notice
             . ($error !== null ? '<p class="error">' . View::e($error) . '</p>' : '')
+            . $this->renderOnboardingGuide($domain, $health, $showOnboardingGuide)
             . $this->renderOverview(
                 $user,
                 $domain,
                 $this->fetchTrendData($domainId),
-                $this->healthChecks->latestForDomain($domainId),
+                $health,
             )
             . $this->renderSourceTable($this->fetchSourceRows($domainId, $sort, $label), (string) $domain['domain'], $sort, $label)
             . $this->renderRecommendations($this->recommendations->forDisplay($domainId))
-            . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain'])
-            . '<script src="/assets/help.js"></script>';
+            . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain']);
 
         View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken(), $flash);
     }
@@ -658,10 +662,63 @@ final class DomainController
             . '<div class="sub"><a href="' . View::e('/domain?' . http_build_query(['domain' => $domain['domain']])) . '">&larr; Back to '
             . View::e((string) $domain['domain']) . '</a></div></div></div>'
             . $this->renderReportMeta($report)
-            . $this->renderRecordDetail($this->fetchReportRecords($reportId))
-            . '<script src="/assets/help.js"></script>';
+            . $this->renderRecordDetail($this->fetchReportRecords($reportId));
 
         View::render('Report detail', $body, $user, $this->auth->csrfToken());
+    }
+
+    /** @param array<string, mixed> $domain */
+    private function renderOnboardingGuide(array $domain, ?HealthCheckSummary $health, bool $autoOpen): string
+    {
+        $currentPolicy = $domain['current_published_policy'] !== null
+            ? (string) $domain['current_published_policy']
+            : 'not yet observed';
+        $findings       = '';
+        $needsAttention = false;
+
+        if ($health !== null) {
+            foreach ($health->items as $item) {
+                if (!\in_array($item->status, [HealthCheckItemResult::WARN, HealthCheckItemResult::FAIL, HealthCheckItemResult::ERROR], true)) {
+                    continue;
+                }
+
+                $needsAttention = true;
+                $description    = $this->reasonLine($item->detail) ?? 'Review the check details on this page.';
+                $helpSlug       = $this->healthCheckHelpSlug($item->checkName);
+                $helpLink       = $helpSlug !== null
+                    ? ' <a href="' . View::e('/help/article?' . http_build_query(['slug' => $helpSlug])) . '">About this check</a>'
+                    : '';
+
+                $findings .= '<li><strong>' . View::e($item->checkName) . ' (' . View::e($item->status) . '):</strong> '
+                    . View::e($description) . $helpLink . '</li>';
+            }
+        }
+
+        if ($health === null) {
+            $findings = '<li>No health-check results are available yet.</li>';
+        } elseif ($findings === '') {
+            $findings = '<li>No warning, failure, or unknown-result findings were recorded in the latest health check.</li>';
+        }
+
+        $nextStep = $needsAttention
+            ? 'Review the findings below and the matching health-check rows, then make any required DNS changes with your DNS provider.'
+            : 'Review the published policy and health-check results. If the published policy is correct, an Admin can approve it as the baseline.';
+        $runAt = $health !== null ? ' The initial check completed at ' . View::e($health->runAt) . '.' : '';
+
+        return '<div class="onboarding-guide-control">'
+            . '<button type="button" class="btn btn-secondary btn-sm" data-onboarding-open>Show onboarding guide</button>'
+            . '<dialog class="onboarding-dialog" data-onboarding-domain="' . View::e((string) $domain['domain']) . '" data-onboarding-auto-open="' . ($autoOpen ? '1' : '0') . '" aria-labelledby="onboarding-title">'
+            . '<div class="onboarding-dialog-head"><h2 id="onboarding-title">Getting started with ' . View::e((string) $domain['domain']) . '</h2>'
+            . '<button type="button" class="help-panel-close" data-onboarding-dismiss aria-label="Dismiss onboarding guide">&times;</button></div>'
+            . '<ol class="onboarding-steps">'
+            . '<li><strong>What the check measured.</strong><p>The health check probes the domain’s current DNS and mail-transport posture; it is a snapshot, separate from aggregate report analysis.' . $runAt . '</p></li>'
+            . '<li><strong>What the DMARC policy means.</strong><p>The currently observed policy is <code>' . View::e($currentPolicy) . '</code>. It describes what receivers should do with mail that fails DMARC.</p></li>'
+            . '<li><strong>What approving the baseline does.</strong><p>Approval records the published policy as the known-good reference for drift detection; it does not change DNS. Approval is available only after a policy has been observed. <a href="/help/article?slug=policy-approve-baseline-action">Read more</a>.</p></li>'
+            . '<li><strong>Recommended next step.</strong><p>' . View::e($nextStep) . '</p></li>'
+            . '</ol>'
+            . '<h3>Findings to review</h3><ul class="onboarding-findings">' . $findings . '</ul>'
+            . '<div class="onboarding-dialog-actions"><button type="button" class="btn btn-primary" data-onboarding-dismiss>Done</button></div>'
+            . '</dialog></div>';
     }
 
     /** @return array<string, mixed>|null */
@@ -1022,21 +1079,35 @@ final class DomainController
         $detail = $dmarcItem->detail;
         $rows   = '';
 
-        $rows .= $this->dmarcbisPctRow($detail);
-        $rows .= $this->dmarcbisOrgDomainRow($detail);
-        $rows .= $this->dmarcbisNewTagsRow($detail);
+        $status = $dmarcItem->status;
+
+        $rows .= $this->dmarcbisPctRow($detail, $status);
+        $rows .= $this->dmarcbisDeprecatedTagsRow($detail, $status);
+        $rows .= $this->dmarcbisOrgDomainRow($detail, $status);
+        $rows .= $this->dmarcbisNewTagsRow($detail, $status);
 
         return '<div class="section-head">' . $sectionTitle . '</div><div class="health-grid">' . $rows . '</div>';
     }
 
     /** @param array<string, mixed> $detail */
-    private function dmarcbisPctRow(array $detail): string
+    private function dmarcbisPctRow(array $detail, string $status): string
     {
+        if ($status === HealthCheckItemResult::ERROR || (!isset($detail['policy_string']) && !isset($detail['org_domain_policy_string']))) {
+            return $this->dmarcbisRow('neutral', 'pct= tag', 'Could not determine whether this tag is published; no valid policy record was available.', 'dmarcbis-deprecated-tags');
+        }
+
         if (isset($detail['pct']) && \is_int($detail['pct'])) {
+            $pct        = $detail['pct'];
+            $canDropPct = isset($detail['policy'])
+                && $pct >= 0 && $pct <= 100
+                && ($pct === 100 || $detail['policy'] === 'none');
+
             return $this->dmarcbisRow(
                 'warning',
                 'pct= tag',
-                "Still published (pct={$detail['pct']}) — removed under RFC 9989. Use the \"Fix me\" button on the DMARC health-check row above to drop it.",
+                $canDropPct
+                    ? "Still published (pct=$pct) — removed under RFC 9989. Use the \"Fix me\" button on the DMARC health-check row above to drop it."
+                    : "Still published (pct=$pct) — removing it may increase enforcement. Review the effect before changing this record.",
                 'dmarcbis-deprecated-tags',
             );
         }
@@ -1045,8 +1116,34 @@ final class DomainController
     }
 
     /** @param array<string, mixed> $detail */
-    private function dmarcbisOrgDomainRow(array $detail): string
+    private function dmarcbisDeprecatedTagsRow(array $detail, string $status): string
     {
+        $tags = [];
+
+        foreach (['rf', 'ri'] as $tag) {
+            if (isset($detail[$tag]) && \is_string($detail[$tag])) {
+                $tags[] = "$tag=" . $detail[$tag];
+            }
+        }
+
+        if ($status === HealthCheckItemResult::ERROR || (!isset($detail['policy_string']) && !isset($detail['org_domain_policy_string']))) {
+            return $this->dmarcbisRow('neutral', 'rf=/ri= tags', 'Could not determine whether these deprecated tags are published; no valid policy record was available.', 'dmarcbis-deprecated-tags');
+        }
+
+        if ($tags !== []) {
+            return $this->dmarcbisRow('warning', 'rf=/ri= tags', 'Still published (' . implode(', ', $tags) . ') — safe to remove at your next DNS edit.', 'dmarcbis-deprecated-tags');
+        }
+
+        return $this->dmarcbisRow('success', 'rf=/ri= tags', 'Not published — already clear of these deprecated tags.', 'dmarcbis-deprecated-tags');
+    }
+
+    /** @param array<string, mixed> $detail */
+    private function dmarcbisOrgDomainRow(array $detail, string $status): string
+    {
+        if ($status === HealthCheckItemResult::ERROR) {
+            return $this->dmarcbisRow('neutral', 'Organizational-domain coverage', 'Could not determine coverage because the DMARC check returned an error; see the health-check row above.', 'dmarcbis-org-domain');
+        }
+
         if (isset($detail['org_domain'])) {
             $policy = isset($detail['org_domain_policy_string']) ? (string) $detail['org_domain_policy_string'] : '';
 
@@ -1062,12 +1159,34 @@ final class DomainController
             return $this->dmarcbisRow('success', 'Organizational-domain coverage', 'Publishes its own record directly — no inheritance needed.', 'dmarcbis-org-domain');
         }
 
+        if (!str_starts_with((string) ($detail['reason'] ?? ''), 'no DMARC record found')) {
+            return $this->dmarcbisRow('danger', 'Organizational-domain coverage', 'The DMARC policy record is invalid or ambiguous, so coverage cannot be confirmed. See the health-check row above.', 'dmarcbis-org-domain');
+        }
+
         return $this->dmarcbisRow('danger', 'Organizational-domain coverage', 'No coverage found anywhere in this domain\'s ancestry.', 'dmarcbis-org-domain');
     }
 
     /** @param array<string, mixed> $detail */
-    private function dmarcbisNewTagsRow(array $detail): string
+    private function dmarcbisNewTagsRow(array $detail, string $status): string
     {
+        if ($status === HealthCheckItemResult::ERROR || (!isset($detail['policy_string']) && !isset($detail['org_domain_policy_string']))) {
+            return $this->dmarcbisRow('neutral', 'New optional tags (np=/psd=/t=)', 'Could not determine which optional tags are published; no valid policy record was available.', 'dmarcbis-overview');
+        }
+
+        $invalidTags = [];
+
+        if (isset($detail['invalid_dmarcbis_tags']) && \is_array($detail['invalid_dmarcbis_tags'])) {
+            foreach ($detail['invalid_dmarcbis_tags'] as $tag => $value) {
+                if (\is_string($tag) && \is_string($value)) {
+                    $invalidTags[] = "$tag=$value";
+                }
+            }
+        }
+
+        if ($invalidTags !== []) {
+            return $this->dmarcbisRow('warning', 'New optional tags (np=/psd=/t=)', 'Invalid value(s): ' . implode(', ', $invalidTags) . ' — review the DNS record.', 'dmarcbis-overview');
+        }
+
         $set = [];
 
         foreach (['non_existent_subdomain_policy' => 'np', 'psd' => 'psd', 'testing' => 't'] as $key => $tag) {

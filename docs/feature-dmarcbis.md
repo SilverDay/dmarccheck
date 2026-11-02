@@ -50,11 +50,11 @@ Everything else (`v=DMARC1`; the `p`, `sp`, `rua`, `ruf`, `adkim`, `aspf`,
 | # | Change under DMARCbis | Classic (RFC 7489) | DMARCbis (RFC 9989/9990) | Where it hits this tool |
 |---|---|---|---|---|
 | D1 | **Org-domain discovery** | Public Suffix List (PSL) | DNS **Tree Walk** (climb labels looking for a DMARC record) | Health check (org-domain + subdomain policy logic); any R-rule using the org domain |
-| D2 | **`pct=` deprecated** | Valid; used for staged rollout | Deprecated — remove at next DNS edit | Recommendation engine R7/R8 (staged enforcement) |
-| D3 | **`rf=` and `ri=` deprecated** | Valid | Deprecated | Parser tolerance; policy-record health check |
-| D4 | **`p=reject` guidance flipped** | Reject as the assumed end goal | More nuanced guidance (verify against RFC 9989 text) | Recommendation engine target-policy logic; `target_policy` default |
-| D5 | **New aggregate-report fields** | Absent | Optional `discovery_method`, `policy_test_mode`, `generator`, `envelope_from` (RFC 9990) | Parser (§5) — additive capture |
-| D6 | **New policy tags** | Absent | New optional tags per RFC 9989 (verify the exact set against the RFC before implementing) | Parser; policy-record health check; help text |
+| D2 | **`pct=` removed from the defined tag set** | Valid; can express percentage-based application | No longer defined; unknown tags are ignored, potentially applying the full policy | DMARC health check/readiness and guarded DNS fix; do not imply `t=` is an equivalent percentage control |
+| D3 | **`rf=` and `ri=` removed from the defined tag set** | Legacy report format/interval tags | No longer defined; unknown tags are ignored | Parser tolerance; informational policy-record health check/readiness |
+| D4 | **Enforcement is defined as any non-`none` policy** | Enforcement staging commonly described as a path toward reject | Both `quarantine` and `reject` are Enforcement; RFC does not make reject a universal target | Keep `target_policy` configurable; R7/R8 follow the operator's selected target |
+| D5 | **New aggregate-report fields** | Absent | Optional `discovery_method`, `generator`, `envelope_from`, `envelope_to`, and per-record override reasons (RFC 9990) | Parser and persistence (§5) — additive capture |
+| D6 | **New policy tags** | Absent | `np=` and `t=` (RFC 9989) | Parser; policy-record health check; help text |
 | D7 | **PSD tag (`psd=`)** | Added later by RFC 9091 | Folded into RFC 9989 | Parser; org-domain logic |
 
 **Every "verify against RFC 7489 §7.1" note in the main spec should now read
@@ -62,10 +62,9 @@ RFC 9989/9990** — in particular the report-authorization record (spec §11.2)
 and the org-domain logic want re-checking against the new text, since the
 tree walk (D1) changes how the organizational domain is determined.
 
-> Build-time verification (do not hardcode from memory): the exact new-tag
-> set (D6), the precise tree-walk algorithm (D1), and the revised `p=reject`
-> guidance wording (D4) must be read from RFC 9989/9990 directly. The table
-> above is the map, not the authoritative text.
+> RFC 9989/9990 §3.2.9, §4.7, §4.10, and RFC 9990 §3.1.1 were checked against
+> the implementation. D4 is a distinction in Enforcement terminology, not a
+> new RFC recommendation to prefer `quarantine` over `reject`.
 
 ---
 
@@ -76,7 +75,12 @@ tree walk (D1) changes how the organizational domain is determined.
   is the most analytically useful. Absence is normal (classic reporters omit
   them) — the existing tolerant design already ignores unknown elements, so
   this is purely "start reading fields we currently drop."
-- Recognise (don't reject) the deprecated `rf=`/`ri=` and any new tags.
+- Capture per-record `policy_evaluated/reason` type/comment values, including
+  `policy_test_mode` (RFC 9990 §3.1.6). This is an override reason, not a
+  report-level field; persist it without changing the existing disposition
+  or pass/fail interpretation.
+- Recognise (don't reject) the deprecated `pct=`/`rf=`/`ri=` tags and the
+  current `np=`/`t=` tags. Keep `psd=` handling under D7.
 - No classic/bis branching here — the parser reads whatever a report contains.
 
 ### 3.2 Health check (§11) — where the parallel view leads
@@ -86,6 +90,9 @@ concrete and actionable here.
 - Add a **regime dimension** to the checks that differ (org-domain discovery
   D1, policy-record validity D3/D6). A check can report e.g.
   "valid under classic DMARC; the `pct=` tag is deprecated under DMARCbis."
+- Validate the current tag values: `np=` accepts `none`, `quarantine`, or
+  `reject`; `psd=` and `t=` accept `y` or `n`. Surface invalid values as
+  review warnings without treating the whole policy record as broken.
 - Add a dedicated **"DMARCbis readiness"** grouping: for each domain, the set
   of D1–D7 items that need attention to be cleanly RFC 9989-compliant. This
   is the migration-guidance feature — it turns the standards transition into
@@ -97,13 +104,12 @@ concrete and actionable here.
 - Evaluate rules under DMARCbis as the source of truth.
 - Rules whose *conclusion depends on the regime* carry a "differs under
   classic DMARC" flag rather than forking the engine:
-  - **R7/R8** (staged enforcement) — currently lean on `pct=` (D2). Under
-    DMARCbis, staged rollout is expressed differently; the recommendation
-    text must change, and the rule notes that `pct=` is deprecated.
-  - **Target-policy rules** — the flipped `p=reject` guidance (D4) affects
-    whether `p=reject; sp=reject` remains the universal recommended target.
-    Re-derive the default `target_policy` guidance against RFC 9989 before
-    the engine keeps steering every domain to reject.
+  - **R7/R8** do not set or advance `pct=`; they only recommend policy-level
+    progress toward the operator's configured target. `t=y` is a distinct
+    test-mode signal with one-level-lower handling, not a percentage control.
+  - **Target-policy rules** — RFC 9989 defines both `quarantine` and `reject`
+    as Enforcement. The original spec's `p=reject; sp=reject` default remains
+    a configurable product default, not a universal RFC recommendation.
   - Any rule using the **org domain** — now via tree walk (D1), not PSL.
 - Rules that don't touch a divergence point (the majority — SPF/DKIM hygiene,
   unknown-sender detection) are unaffected and carry no regime flag.
@@ -136,11 +142,11 @@ the existing articles, since users read help in the context of a finding.
   change and the one most likely to confuse a knowledgeable user who learned
   the PSL model.
 - **Deprecated tags** — a short article covering `pct=`, `rf=`, `ri=` (D2/D3):
-  what they did, why they're deprecated, and that removing them is a
-  next-DNS-edit task, not urgent.
-- **`p=reject` guidance** — revise the enforcement-progression help to reflect
-  the flipped/nuanced DMARCbis guidance (D4), since the tool's recommendations
-  now reference it.
+  what they did, why they're no longer defined, and why a partial `pct=`
+  value needs an impact review before removal.
+- **`p=reject` guidance** — explain RFC 9989's Enforcement definition (D4):
+  both `quarantine` and `reject` count; do not present either as the universal
+  target.
 - **New report fields** — brief coverage of `envelope_from` etc. (D5) where the
   help explains how to read an aggregate report.
 
@@ -156,8 +162,9 @@ the existing articles, since users read help in the context of a finding.
   looking at a classic-era record and needs to recognise it.
 
 ### 4.3 Tone / maintenance note
-- Frame DMARCbis as evolution, not alarm — mirror the "most records keep
-  working" reality so users aren't panicked into unnecessary DNS churn.
+- Frame DMARCbis as evolution, not alarm — most policy settings keep working,
+  while clearly explaining the `pct<100` enforcement difference so users
+  aren't surprised by a stronger effective policy.
 - These help texts have a **sunset dimension**: as the deployed base moves to
   DMARCbis, the "classic vs bis" framing becomes less necessary. Write the
   divergence callouts so they can later collapse to single-regime text
@@ -173,14 +180,16 @@ the existing articles, since users read help in the context of a finding.
    change; verify the algorithm against RFC 9989.
 3. **Health-check "DMARCbis readiness" grouping** — the flagship
    user-visible feature; where the parallel framing lives.
-4. **Recommendation-engine flags (D2/D4)** — revise R7/R8 and target-policy
-   guidance against the RFC.
+4. **Recommendation-engine guidance (D2/D4)** — keep rules aligned with the
+   configured target; explain the `pct=` removal and enforcement terminology
+   without suggesting `t=y` is equivalent to percentage rollout.
 5. **Help-text pass** — alongside 3 and 4, so callouts have articles to link.
 6. **Sunset** — once the deployed base is predominantly DMARCbis, collapse the
    diff view to single-regime and retire the classic-only callouts. Design the
    callouts (and help text, §4.3) so this is a deletion, not a rewrite.
 
-**Verify-before-build (carried from §2):** the tree-walk algorithm, the exact
-new-tag set, and the revised `p=reject` wording come from RFC 9989/9990
-directly — this document is the integration map, not a substitute for the
-RFC text.
+**Verification record:** the RFC 9989 tree-walk algorithm and query cap
+match the implementation; new policy tags are `np=` and `t=`, with `psd=`
+covered separately under D7. RFC 9990 specifies `policy_test_mode` as a
+per-record override reason, not a report-level field. RFC 9989 does not
+prescribe a universal `p=reject` target.

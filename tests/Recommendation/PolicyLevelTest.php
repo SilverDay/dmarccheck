@@ -21,6 +21,13 @@ final class PolicyLevelTest extends TestCase
         self::assertTrue(PolicyLevel::isValidLevel('reject'));
     }
 
+    public function testQuarantineIsAnEnforcementLevelAndPctOrTestingTagsDoNotChangeThePolicyLevel(): void
+    {
+        self::assertSame('quarantine', PolicyLevel::extract('p=quarantine; pct=25; t=y'));
+        self::assertTrue(PolicyLevel::isStricter('quarantine', 'none'));
+        self::assertFalse(PolicyLevel::isStricter('quarantine', 'quarantine'));
+    }
+
     public function testInvalidOrUnnormalizedInputIsRejected(): void
     {
         self::assertFalse(PolicyLevel::isValidLevel(''));

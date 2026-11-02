@@ -30,33 +30,28 @@ final class DmarcFixSuggesterTest extends TestCase
         self::assertSame([], $fixes);
     }
 
-    /**
-     * A domain missing rua= that also still publishes the RFC 9989
-     * (DMARCbis)-removed pct= tag gets BOTH fixes independently
-     * (docs/feature-dmarcbis.md Phase 3) — the missing-rua fix keeps
-     * pct=50 as-is (Phase 1's "don't touch existing pct on that fix"
-     * decision), the drop-pct fix addresses it separately.
-     */
     public function testMissingRuaReconstructsTheExistingRecordRatherThanClobberingIt(): void
     {
         $fixes = DmarcFixSuggester::suggest('example.com', [
-            'policy'           => 'reject',
-            'subdomain_policy' => 'quarantine',
-            'pct'              => 50,
-            'adkim'            => 's',
-            'aspf'             => null,
-            'rua'              => [],
-            'issues'           => ['no rua= aggregate report destination — reports cannot reach this tool'],
+            'policy'                        => 'reject',
+            'subdomain_policy'              => 'quarantine',
+            'non_existent_subdomain_policy' => 'reject',
+            'psd'                           => 'n',
+            'pct'                           => 50,
+            'adkim'                         => 's',
+            'testing'                       => 'y',
+            'rf'                            => 'afrf',
+            'ri'                            => '86400',
+            'fo'                            => '1:d',
+            'rua'                           => [],
+            'ruf'                           => ['failures@example.com'],
+            'issues'                        => ['no rua= aggregate report destination — reports cannot reach this tool'],
         ], 'dmarc@example.com');
 
-        self::assertCount(2, $fixes);
+        self::assertCount(1, $fixes);
         self::assertSame(
-            'v=DMARC1; p=reject; sp=quarantine; pct=50; adkim=s; rua=mailto:dmarc@example.com',
+            'v=DMARC1; p=reject; sp=quarantine; np=reject; psd=n; pct=50; adkim=s; t=y; rf=afrf; ri=86400; fo=1:d; rua=mailto:dmarc@example.com; ruf=mailto:failures@example.com',
             $fixes[0]->recordValue,
-        );
-        self::assertSame(
-            'v=DMARC1; p=reject; sp=quarantine; adkim=s',
-            $fixes[1]->recordValue,
         );
     }
 
@@ -76,7 +71,7 @@ final class DmarcFixSuggesterTest extends TestCase
     {
         $fixes = DmarcFixSuggester::suggest('example.com', [
             'policy' => 'reject',
-            'pct'    => 75,
+            'pct'    => 100,
             'rua'    => ['dmarc-reports@example.com'],
             'issues' => [],
         ], 'dmarc@example.com');
@@ -86,6 +81,40 @@ final class DmarcFixSuggesterTest extends TestCase
             'v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.com',
             $fixes[0]->recordValue,
         );
+    }
+
+    public function testDropPctFixPreservesOtherRecognizedPolicyAndReportTags(): void
+    {
+        $fixes = DmarcFixSuggester::suggest('example.com', [
+            'policy'                        => 'reject',
+            'subdomain_policy'              => 'quarantine',
+            'non_existent_subdomain_policy' => 'reject',
+            'psd'                           => 'n',
+            'pct'                           => 100,
+            'testing'                       => 'y',
+            'rf'                            => 'afrf',
+            'ri'                            => '86400',
+            'fo'                            => '1:d',
+            'rua'                           => ['reports@example.com'],
+            'ruf'                           => ['failures@example.com'],
+        ], 'dmarc@example.com');
+
+        self::assertCount(1, $fixes);
+        self::assertSame(
+            'v=DMARC1; p=reject; sp=quarantine; np=reject; psd=n; t=y; rf=afrf; ri=86400; fo=1:d; rua=mailto:reports@example.com; ruf=mailto:failures@example.com',
+            $fixes[0]->recordValue,
+        );
+    }
+
+    public function testDoesNotOfferDropPctFixWhenItWouldIncreaseEnforcement(): void
+    {
+        $fixes = DmarcFixSuggester::suggest('example.com', [
+            'policy' => 'reject',
+            'pct'    => 25,
+            'rua'    => ['reports@example.com'],
+        ], 'dmarc@example.com');
+
+        self::assertSame([], $fixes);
     }
 
     public function testNoPctPublishedHasNoDropPctSuggestion(): void

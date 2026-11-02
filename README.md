@@ -15,7 +15,10 @@ Full requirements are in `docs/dmarc-report-analyzer-spec.md`.
 > threat reporting, gated on a T&C/GDPR review that hasn't happened. Two
 > features beyond the original spec are also built: a public landing page
 > and an in-app "DMARC 101" contextual help system (see
-> `docs/feature-helpsystem.md`/`docs/feature-landing-page.md`).
+> `docs/feature-helpsystem.md`/`docs/feature-landing-page.md`). DMARCbis
+> support is partially implemented; the remaining work is tracked in
+> `docs/todo.md`. Other post-v1 enhancements are proposals, not shipped
+> features; see `docs/feature-enhancements.md` and the TODO list.
 
 ---
 
@@ -28,6 +31,17 @@ mysql -u root -p -e "CREATE DATABASE dmarc CHARACTER SET utf8mb4 COLLATE utf8mb4
 php bin/migrate.php
 mysql -u dmarc -p dmarc < db/seed-domains.sql   # optional: the 10 domains
 vendor/bin/phpunit
+```
+
+Database-backed ingestion tests are opt-in and use connection-scoped temporary
+tables. To run them, point the test DSN at an isolated MySQL/MariaDB test
+database (do not use a production database):
+
+```bash
+DMARC_TEST_DB_DSN='mysql:host=127.0.0.1;dbname=dmarc_test;charset=utf8mb4' \
+DMARC_TEST_DB_USER=dmarc_test \
+DMARC_TEST_DB_PASSWORD='...' \
+vendor/bin/phpunit tests/Integration
 ```
 
 Open the folder in VS Code and accept the recommended extensions prompt
@@ -149,7 +163,7 @@ tests/        PHPUnit + fixtures
   and alerting while keeping its history intact and browsable.
 
 **Beyond the original spec, also built:**
-- Contextual help system (`docs/feature-helpsystem.md`) — an 85-article
+- Contextual help system (`docs/feature-helpsystem.md`) — a 90-article
   "DMARC 101" reference (`src/Help/`) covering every DMARC/SPF/DKIM
   concept, health check, recommendation rule, and alert type this tool
   surfaces, written against this codebase's actual behavior rather than
@@ -160,18 +174,34 @@ tests/        PHPUnit + fixtures
   columns, backed by an auth-gated `/help/inline` JSON endpoint. A
   completeness test ties the catalog to the actual
   Rule/HealthCheckItemResult/Alert-check code so a future rule or status
-  can't silently ship a dead tooltip link. Not yet built: a persistent
-  per-page help panel, an onboarding guided walkthrough, and search —
-  see `docs/todo.md`.
+  can't silently ship a dead tooltip link. A per-page help panel, first-run
+  onboarding guide, and case-insensitive article search are also implemented.
 - Public landing page (`docs/feature-landing-page.md`) — `/` now shows
   an orientation page (what the tool does, a capabilities summary, a
   link into the help system) for unauthenticated visitors instead of
   redirecting straight to a bare login form; an active session still
   goes straight to the dashboard.
+- DMARCbis support (`docs/feature-dmarcbis.md`) — RFC 9990 report-field
+  capture (including per-record override reasons), RFC 9989
+  organizational-domain tree walk, deprecated-tag awareness, validation of
+  `np=`/`psd=`/`t=`, a per-domain readiness section, and an overview attention
+  indicator are implemented. Opt-in DB-backed migration/storage/count tests
+  are available. Remaining work includes broader readiness/presentation
+  coverage and any further operator-facing refinements; see `docs/todo.md`.
 
 **Stubs / not yet written:**
 - §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR
   review that hasn't happened; ships disabled either way
+
+## Post-v1 backlog
+
+The feature documents also describe ideas that are not part of the
+feature-complete core spec. Most are proposals, not commitments. The
+remaining implementation work, review gates, and intentionally deferred
+items are listed in [`docs/todo.md`](docs/todo.md); see
+[`docs/feature-enhancements.md`](docs/feature-enhancements.md) for scopes
+and [`docs/feature-dmarcbis.md`](docs/feature-dmarcbis.md) for the
+DMARCbis design.
 
 ---
 

@@ -1,6 +1,6 @@
 # Feature Spec — Contextual Help System ("DMARC 101")
 
-**Status:** Core built 2026-08-09 (see `docs/todo.md` items 4-6 for what's still open: the persistent help panel §4.2, onboarding guided summary §4.5, and search §9). Built: the full 71-article catalog (§5) as `src/Help/content/*.php` + `HelpRepository`, `HelpController`'s public `/help`/`/help/article?slug=` index and article pages, the auth-gated `/help/inline?slug=` tooltip endpoint, and inline `?`-icon tooltips (§4.1/§6.2) wired into the domain drill-down's recommendation rule IDs, health-check badges, and source-table headers. One deviation from this doc: routes use `?slug=` query strings, not `/help/<slug>` path params — this app's `Router` is exact-string-match only (see CLAUDE.md), same reason `/domain` uses `?domain=`.  
+**Status:** Implemented: the 90-article catalog (§5), public `/help` index and `/help/article?slug=` pages, auth-gated inline tooltip and contextual-help endpoints, inline `?` tooltips, the persistent per-page help panel (§4.2), the first-run onboarding guide (§4.5), and `/help/search?q=` (§9). Onboarding dismissal is remembered per domain in the current browser and the guide can be reopened from the domain page. Routes use query strings because this app's `Router` is exact-string-match only (see CLAUDE.md), so article routes use `?slug=` rather than `/help/<slug>`.
 **Relates to:** spec §7 (Dashboard), §9–§11 (findings, recommendations, health checks)
 
 ---
@@ -93,6 +93,10 @@ When a domain is first added and the initial health check completes, a **guided 
 2. What the current DMARC policy means.
 3. What the "approve baseline" action does and why it matters.
 4. The recommended next step given the health-check results.
+
+The guide opens automatically after the first synchronous health check on
+domain creation. Dismissal is remembered per domain in the current browser;
+the "Show onboarding guide" control on the drill-down opens it again.
 
 ---
 
@@ -302,9 +306,13 @@ Help articles follow these conventions to stay consistent and scannable:
 
 ---
 
-## 9. Future extensions (not v1)
+## 9. Search
 
-- **Search**: a `/help/search?q=` endpoint over article titles and summaries — useful once the catalog grows.
+`/help/search?q=` searches article titles and summaries case-insensitively.
+The help index and result page provide the search form; an empty query asks
+for a term, and an unmatched query shows a no-results message.
+
+## 10. Future extensions
 - **Localization**: the structured `HelpArticle` objects are translation-ready; the content PHP files can be swapped for locale-specific versions.
 - **User feedback**: a "Was this helpful? Yes / No" micro-survey per article, writing to a `help_feedback` table — helps prioritize content improvements.
 - **Wizard mode**: for onboarding, a step-by-step guided flow that combines help text with the actual configuration actions (goes beyond read-only help).

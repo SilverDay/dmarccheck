@@ -31,6 +31,18 @@ final class OrgDomainTest extends TestCase
         self::assertSame(['a.b.psd.tld', 'b.psd.tld', 'psd.tld'], $result->queriedNames);
     }
 
+    public function testInvalidPsdValueDoesNotStopTreeWalk(): void
+    {
+        $dns = new FakeDnsResolver([
+            '_dmarc.example.com' => ['v=DMARC1; p=reject; psd=maybe'],
+        ]);
+
+        $result = (new OrgDomain($dns))->resolve('mail.example.com');
+
+        self::assertSame('example.com', $result->organizationalDomain);
+        self::assertSame(['mail.example.com', 'example.com', 'com'], $result->queriedNames);
+    }
+
     public function testNoPsdAnywhereWalksToLabelExhaustionAndPicksTheOnlyCandidate(): void
     {
         $dns = new FakeDnsResolver(['_dmarc.example.com' => ['v=DMARC1; p=reject; sp=reject']]);
@@ -52,6 +64,16 @@ final class OrgDomainTest extends TestCase
         $result = (new OrgDomain($dns))->resolve('mail.example.com');
 
         self::assertSame('example.com', $result->organizationalDomain);
+    }
+
+    public function testRecordWithoutPolicyIsNotAValidTreeWalkCandidateEvenWithPsdN(): void
+    {
+        $dns = new FakeDnsResolver(['_dmarc.example.com' => ['v=DMARC1; psd=n']]);
+
+        $result = (new OrgDomain($dns))->resolve('mail.example.com');
+
+        self::assertNull($result->organizationalDomain);
+        self::assertNull($result->record);
     }
 
     public function testNothingFoundAnywhereReturnsNull(): void
