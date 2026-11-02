@@ -23,7 +23,7 @@ return [
         $category,
         'Everything about one domain: policy status and controls, the pass/fail trend, health-check results, per-source-IP traffic, open recommendations, and recent reports.',
         '<p>The <strong>Policy</strong> card shows the three distinct policy fields — <a href="/help/article?slug=policy-current-published">published</a>, <a href="/help/article?slug=policy-approved-baseline">approved baseline</a>, and <a href="/help/article?slug=policy-target">target</a> — plus (role-permitting) the deactivate/reactivate and approve-baseline actions and an editable target policy.</p>'
-            . '<p>The <strong>Sources</strong> table lists every sending IP seen in the last 30 days with rDNS/ASN enrichment, its <a href="/help/article?slug=known-vs-unknown">known/unknown</a> label, volume, and DKIM/SPF pass rates — sortable and filterable by label. <strong>Health check</strong> shows the latest DNS/network posture probe results. <strong>Recommendations</strong> lists this domain\'s open R1-R12 findings. <strong>Recent reports</strong> links to the raw per-record view for any ingested report.</p>',
+            . '<p>The <strong>Sources</strong> table lists every sending IP seen in the last 30 days with rDNS/ASN enrichment, its <a href="/help/article?slug=known-vs-unknown">known/unknown</a> label, volume, and DKIM/SPF pass rates — sortable and filterable by label. <strong>Health check</strong> shows the latest DNS/network posture probe results. <strong>Recommendations</strong> lists this domain\'s open R1-R12 findings. Admins also get advisory SPF/DKIM guidance for R1/R2 evidence. <strong>Recent reports</strong> links to the raw per-record view for any ingested report.</p>',
         [],
     ),
     new HelpArticle(
@@ -32,6 +32,16 @@ return [
         $category,
         'One ingested DMARC report, broken down to the individual source-IP records it contains.',
         '<p>Shows one report\'s metadata (reporting organization, report ID, period covered) and every <a href="/help/article?slug=dmarc-aggregate-reports">record</a> it contains — source IP, message count, disposition applied, and the raw DKIM/SPF/alignment results reported for that IP, expandable to the underlying <code>auth_results</code> rows when present.</p>',
+        [],
+    ),
+    new HelpArticle(
+        'page-report-search',
+        'Report search and CSV export',
+        $category,
+        'Search individual aggregate-report records by date, domain, sender label, DKIM/SPF result, disposition, or ASN organization.',
+        '<p>Each result is one source-IP record from an aggregate report, not a cross-report IP aggregate. The report-period filter uses the report start date; choose the last 7, 30, or 90 days, or a custom range of up to 366 days.</p>'
+            . '<p>Read Only users must select one domain. Admins and Super Admins can choose a single domain or search across all domains. The page shows at most 200 results; CSV exports contain at most 10,000 rows and include the report ID and full report period for follow-up.</p>'
+            . '<p>CSV text fields are protected against spreadsheet formula execution. A truncated export is named accordingly and includes an <code>X-Export-Truncated</code> response header.</p>',
         [],
     ),
     new HelpArticle(

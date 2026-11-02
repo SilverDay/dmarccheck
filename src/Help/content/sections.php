@@ -71,6 +71,15 @@ return [
         [],
     ),
     new HelpArticle(
+        'card-auth-guidance',
+        'SPF/DKIM sender guidance',
+        $category,
+        'Admin-only DNS and report evidence for currently open R1/R2 findings, with no generated sender mechanisms.',
+        '<p>This advisory section links R1/R2 findings to the raw SPF identity or DKIM signing domain/selector reported for the affected source IP. It fetches current public DNS TXT data for those identities when the names are valid, and shows approximate top-level SPF lookup counts. DNS failures and empty answers are not treated as proof that a record is absent.</p>'
+            . '<p>The analyzer does not infer a provider <code>include:</code>, add a source IP to SPF, generate a DKIM key, or publish DNS. Confirm which party controls each identity and verify changes with the sending provider. The SPF count is intentionally an approximation, not a recursive RFC 7208 evaluation.</p>',
+        [],
+    ),
+    new HelpArticle(
         'card-recent-reports',
         'The Recent reports section',
         $category,

@@ -16,9 +16,10 @@ Full requirements are in `docs/dmarc-report-analyzer-spec.md`.
 > features beyond the original spec are also built: a public landing page
 > and an in-app "DMARC 101" contextual help system (see
 > `docs/feature-helpsystem.md`/`docs/feature-landing-page.md`). DMARCbis
-> support is partially implemented; the remaining work is tracked in
-> `docs/todo.md`. Other post-v1 enhancements are proposals, not shipped
-> features; see `docs/feature-enhancements.md` and the TODO list.
+> support is implemented for the verified D1–D7 scope, and report filtering,
+> search, and CSV export are implemented. Other post-v1 enhancements remain
+> proposals, not shipped features; see `docs/feature-enhancements.md` and
+> `docs/todo.md`.
 
 ---
 
@@ -185,9 +186,19 @@ tests/        PHPUnit + fixtures
   capture (including per-record override reasons), RFC 9989
   organizational-domain tree walk, deprecated-tag awareness, validation of
   `np=`/`psd=`/`t=`, a per-domain readiness section, and an overview attention
-  indicator are implemented. Opt-in DB-backed migration/storage/count tests
-  are available. Remaining work includes broader readiness/presentation
-  coverage and any further operator-facing refinements; see `docs/todo.md`.
+  indicator are implemented for the verified D1–D7 scope. Opt-in DB-backed
+  migration/storage/count tests are available; broader readiness-combination
+  coverage remains tracked in `docs/todo.md`.
+- Report search (`docs/feature-enhancements.md`) — record-level filters by
+  date, domain, sender label, DKIM/SPF result, disposition, and ASN
+  organization, with role-scoped cross-domain access and formula-safe CSV
+  export (10,000-row maximum).
+- R1/R2 SPF/DKIM sender guidance — Admin-only, advisory evidence and
+  bounded live DNS inspection. It does not infer sender mechanisms or
+  publish DNS; the SPF lookup count is approximate.
+- Optional generic HTTPS webhook alert delivery — HMAC-signed, privacy-
+  minimized events with bounded retries and audit outcomes; configure URLs
+  and secrets through environment-backed entries in `config.php`.
 
 **Stubs / not yet written:**
 - §10.8 community threat reporting (Spamhaus) — gated on a T&C/GDPR

@@ -112,6 +112,18 @@ return [
         'window_days'             => 1,   // "recent" day-over-day window for volume + pass-rate checks
         'pass_rate_baseline_days' => 30,  // trailing window the recent pass rate is compared against
         'pass_rate_min_count'     => 50,  // minimum sample size, both windows, before judging a pass-rate drop
+
+        // Optional generic HTTPS JSON webhooks. Keep endpoint URLs and
+        // HMAC secrets in the service environment, never in this file:
+        // export DMARC_ALERT_WEBHOOK_URL and DMARC_ALERT_WEBHOOK_SECRET.
+        // Every configured destination needs a unique name and env vars.
+        // 'webhooks' => [
+        //     [
+        //         'name'       => 'operations',
+        //         'url_env'    => 'DMARC_ALERT_WEBHOOK_URL',
+        //         'secret_env' => 'DMARC_ALERT_WEBHOOK_SECRET',
+        //     ],
+        // ],
     ],
 
     // §10 — R1-R12 rule engine. Reuses alerting.unknown_ip_volume for R5/R6

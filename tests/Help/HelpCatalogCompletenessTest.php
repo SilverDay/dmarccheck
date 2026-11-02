@@ -56,6 +56,7 @@ final class HelpCatalogCompletenessTest extends TestCase
             'page-domains',
             'page-domain-detail',
             'page-report-detail',
+            'page-report-search',
             'page-allowlist',
             'page-users',
             'page-audit-log',
@@ -77,6 +78,7 @@ final class HelpCatalogCompletenessTest extends TestCase
             'card-dmarcbis-readiness',
             'card-sources',
             'card-recommendations',
+            'card-auth-guidance',
             'card-recent-reports',
         ] as $section) {
             self::assertNotNull($this->repo->get($section), "Missing help article for \"{$section}\"");

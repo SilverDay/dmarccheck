@@ -49,6 +49,7 @@ final class View
 
         if ($user !== null) {
             echo '<a href="/">Domains</a>';
+            echo '<a href="/reports">Reports</a>';
 
             if (Roles::atLeast($user->role, Roles::ADMIN)) {
                 echo '<a href="/admin/known-senders">Allowlist</a>';

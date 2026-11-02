@@ -190,11 +190,12 @@ final class HelpController
                 'dkim-overview',
                 'spf-overview',
             ],
-            $path === '/admin/known-senders'    => ['page-allowlist', 'known-senders-allowlist'],
-            $path === '/admin/users'            => ['page-users', 'page-security'],
-            $path === '/admin/audit-log'        => ['page-audit-log'],
-            str_starts_with($path, '/account/') => ['page-security'],
-            default                             => ['dmarc-overview', 'spf-overview', 'dkim-overview'],
+            $path === '/reports' || $path === '/reports/export' => ['page-report-search'],
+            $path === '/admin/known-senders'                    => ['page-allowlist', 'known-senders-allowlist'],
+            $path === '/admin/users'                            => ['page-users', 'page-security'],
+            $path === '/admin/audit-log'                        => ['page-audit-log'],
+            str_starts_with($path, '/account/')                 => ['page-security'],
+            default                                             => ['dmarc-overview', 'spf-overview', 'dkim-overview'],
         };
         $articles = [];
 

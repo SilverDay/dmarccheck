@@ -35,17 +35,25 @@ curl -H "Authorization: Bearer $DMARC_API_KEY" \
 
 ## 3. Report Filtering, Search & Export
 
+**Status:** shipped in the first Phase 2 slice. Search is record-level,
+filters on report-period start date, and limits page display to 200 rows and
+CSV export to 10,000 rows. Read Only users must select one domain; Admin and
+Super Admin may search one domain or all domains. Custom date windows are
+limited to 366 days.
+
 **Motivation:** The dashboard shows per-domain drill-down, but forensics or compliance audits often need "show me all unknown-source records from the last 30 days across all domains" and to export for external analysis or regulatory submission.
 
 **Scope:**
 - Dashboard enhancements:
   - Date-range picker (last 7/30/90 days, custom range).
-  - Filter source table by: label (known/unknown), DKIM/SPF/alignment result, disposition, ASN/org.
+  - Filter report records by sender label, DKIM result, SPF result,
+    disposition, and ASN organization.
   - Cross-domain view: option to search/filter across all domains, not just one.
 - Export:
   - CSV download: domain, source IP, rDNS, ASN org, label, volume, DKIM result, SPF result, disposition, date range.
   - Raw report ID list for manual inspection.
-- **Performance:** add DB indexes on (domain_id, date_range, label) for fast filtering.
+- **Performance:** a `reports.date_begin` index supports cross-domain date
+  ranges; other indexing should follow measured query plans as data grows.
 
 **Example use case:**
 ```
@@ -80,6 +88,24 @@ Domain at p=none with R7 ("safe to move to quarantine").
 ---
 
 ## 5. Webhook Alerting
+
+**Status:** generic HTTPS JSON webhook delivery is implemented. Each configured
+destination uses environment variable references for its HTTPS URL and
+32-byte-minimum HMAC secret. Endpoints must use port 443 and may not include
+URL credentials, query strings, or fragments; redirects are not followed.
+Each event carries only `type`, `domain`, `severity`, UTC `timestamp`, and a
+generic `message` (no source IP or raw evidence). `X-DMARC-Signature` is
+`sha256=<hex HMAC-SHA256 of the exact JSON body>`; retries reuse the same event
+ID and signature. Heartbeat and policy drift map to `high`; unknown-volume
+and pass-rate regression map to `medium`.
+
+Transient transport failures, HTTP 408/429, and 5xx responses get up to three
+attempts with short backoff; other HTTP failures stop immediately. Each
+delivery outcome and attempt status is audit-logged without storing the URL
+or secret. Failures are reported to stderr and do not prevent the email
+digest or make an otherwise successful job fail. Active findings are sent
+again on each run, matching email semantics; delivery has no persistent
+deduplication state. Configure an empty list to leave webhooks disabled.
 
 **Motivation:** `bin/alert.php` sends email only. Slack/Teams/PagerDuty/custom-HTTP integration avoids polling email.
 
@@ -145,6 +171,15 @@ Domain at p=none with R7 ("safe to move to quarantine").
 ---
 
 ## 9. SPF / DKIM Configuration Snippet Generator
+
+**Status:** R1/R2 guidance is shipped as an Admin-only advisory. It shows
+the raw identities/selectors reported for current findings and performs
+bounded live DNS TXT lookups for valid targets. It does not generate SPF
+provider includes/IP mechanisms or DKIM keys: report data cannot establish
+which party controls an identity or which mechanism is safe to publish.
+SPF lookup counts are approximate, and empty DNS answers are inconclusive.
+Existing health-check “Fix me” suggestions are a separate feature and remain
+unchanged.
 
 **Motivation:** Health check reports SPF/DKIM issues but doesn't output ready-to-apply DNS records. Reducing copy-paste friction speeds remediation.
 

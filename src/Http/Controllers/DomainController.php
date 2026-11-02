@@ -12,6 +12,7 @@ use App\Config;
 use App\HealthCheck\Fix\DmarcFixSuggester;
 use App\HealthCheck\Fix\HealthCheckFix;
 use App\HealthCheck\Fix\MtaStsFixSuggester;
+use App\HealthCheck\Fix\ReportAuthDnsInspector;
 use App\HealthCheck\Fix\ReportDestinationAuthFixSuggester;
 use App\HealthCheck\Fix\SpfFixSuggester;
 use App\HealthCheck\Fix\TlsRptFixSuggester;
@@ -25,6 +26,7 @@ use App\Http\View;
 use App\Recommendation\PolicyLevel;
 use App\Recommendation\RecommendationRepository;
 use App\Recommendation\RecommendationRow;
+use App\Recommendation\ReportAuthEvidenceRepository;
 use App\Support\DomainName;
 use App\Support\Ip;
 use PDO;
@@ -63,6 +65,8 @@ final class DomainController
     public function __construct(
         private readonly PDO $pdo,
         private readonly RecommendationRepository $recommendations,
+        private readonly ReportAuthEvidenceRepository $reportAuthEvidence,
+        private readonly ReportAuthDnsInspector $reportAuthDns,
         private readonly HealthCheckRepository $healthChecks,
         private readonly HealthCheckRunnerFactory $healthCheckFactory,
         private readonly AuditLog $audit,
@@ -607,10 +611,11 @@ final class DomainController
         ?string $error = null,
         bool $showOnboardingGuide = false,
     ): void {
-        $domainId = (int) $domain['id'];
-        $sort     = (string) ($_GET['sort'] ?? 'volume');
-        $label    = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
-        $health   = $this->healthChecks->latestForDomain($domainId);
+        $domainId           = (int) $domain['id'];
+        $sort               = (string) ($_GET['sort'] ?? 'volume');
+        $label              = isset($_GET['label']) && $_GET['label'] !== '' ? (string) $_GET['label'] : null;
+        $health             = $this->healthChecks->latestForDomain($domainId);
+        $recommendationRows = $this->recommendations->forDisplay($domainId);
 
         $notice = (int) $domain['active'] !== 1
             ? '<p class="error">This domain is deactivated — excluded from ingestion, health checks, analysis, and alerting. Historical data below is retained and still browsable.</p>'
@@ -626,7 +631,8 @@ final class DomainController
                 $health,
             )
             . $this->renderSourceTable($this->fetchSourceRows($domainId, $sort, $label), (string) $domain['domain'], $sort, $label)
-            . $this->renderRecommendations($this->recommendations->forDisplay($domainId))
+            . $this->renderRecommendations($recommendationRows)
+            . $this->renderReportAuthGuidance($user, $domain, $recommendationRows)
             . $this->renderReportsList($this->fetchRecentReports($domainId), (string) $domain['domain']);
 
         View::render((string) $domain['domain'], $body, $user, $this->auth->csrfToken(), $flash);
@@ -1644,6 +1650,162 @@ final class DomainController
         }
 
         return '<div class="section-head">' . $sectionTitle . '</div><div class="rec-list">' . $items . '</div>';
+    }
+
+    /**
+     * Adds evidence-specific SPF/DKIM review context for open R1/R2 findings.
+     * It never generates sender mechanisms or changes DNS.
+     *
+     * @param array<string, mixed> $domain
+     * @param list<RecommendationRow> $rows
+     */
+    private function renderReportAuthGuidance(AuthUser $user, array $domain, array $rows): string
+    {
+        if (!Roles::atLeast($user->role, Roles::ADMIN)) {
+            return '';
+        }
+
+        $relevant = array_values(array_filter(
+            $rows,
+            static fn (RecommendationRow $row): bool => \in_array($row->ruleId, ['R1', 'R2'], true)
+        ));
+
+        if ($relevant === []) {
+            return '';
+        }
+
+        $evidence   = $this->reportAuthEvidence->forRecommendations((int) $domain['id'], $relevant);
+        $spfStates  = [];
+        $dkimStates = [];
+        $spfLimit   = 10;
+        $dkimLimit  = 20;
+
+        foreach ($evidence['findings'] as $finding) {
+            foreach ($finding['spf_domains'] as $identityDomain) {
+                $identityDomain = strtolower(rtrim(trim($identityDomain), '.'));
+
+                if (!DomainName::isValid($identityDomain) || array_key_exists($identityDomain, $spfStates)) {
+                    continue;
+                }
+
+                if (\count($spfStates) >= $spfLimit) {
+                    continue;
+                }
+
+                $spfStates[$identityDomain] = $this->reportAuthDns->inspectSpf($identityDomain);
+            }
+
+            foreach ($finding['dkim_signatures'] as $signature) {
+                $key = strtolower(rtrim(trim($signature['domain']), '.')) . "\0" . $signature['selector'];
+
+                if (array_key_exists($key, $dkimStates)) {
+                    continue;
+                }
+
+                if (\count($dkimStates) >= $dkimLimit) {
+                    continue;
+                }
+
+                $dkimStates[$key] = $this->reportAuthDns->inspectDkim(
+                    $signature['domain'],
+                    $signature['selector']
+                );
+            }
+        }
+
+        $items = '';
+
+        foreach ($relevant as $row) {
+            $details = $evidence['findings'][$row->id] ?? ['spf_domains' => [], 'dkim_signatures' => []];
+            $items .= '<div class="auth-guidance-item"><h3>' . View::e($row->ruleId) . ' &middot; <span class="mono">'
+                . View::e($row->subject ?? 'unknown source') . '</span></h3>'
+                . '<p class="card-sub">' . View::e($row->ruleId === 'R1'
+                    ? 'SPF failed while DKIM passed for a known sender.'
+                    : 'DKIM failed while SPF passed for a known sender.')
+                . ' Report evidence: ' . View::e((string) ($row->evidence['spf_fail_count'] ?? $row->evidence['dkim_fail_count'] ?? 0))
+                . ' affected messages over ' . View::e((string) ($row->evidence['window_days'] ?? '?')) . ' days.</p>';
+
+            if ($row->ruleId === 'R1') {
+                if ($details['spf_domains'] === []) {
+                    $items .= '<p>No matching raw SPF identity was recorded. Review the sender\'s documented SPF setup with its provider.</p>';
+                } else {
+                    $items .= '<ul class="auth-guidance-list">';
+
+                    foreach ($details['spf_domains'] as $identityDomain) {
+                        $items .= '<li><strong>Reported SPF identity:</strong> <code>' . View::e($identityDomain) . '</code>';
+                        $state = $spfStates[strtolower(rtrim(trim($identityDomain), '.'))] ?? null;
+
+                        if ($state === null) {
+                            $items .= '<p class="card-sub">Current DNS lookup was not run (invalid target or the 10-identity inspection limit was reached).</p>';
+                        } elseif ($state['record'] !== null) {
+                            $items .= '<p>Current SPF TXT:</p><code class="rec-evidence">' . View::e($state['record']) . '</code>';
+                            if ($state['lookup_count'] !== null) {
+                                $items .= '<p class="card-sub">Approximate top-level DNS-lookup mechanisms: '
+                                    . View::e((string) $state['lookup_count']) . ' (not a recursive RFC 7208 evaluation).</p>';
+                            }
+                            foreach ($state['issues'] as $issue) {
+                                $items .= '<p class="card-sub">' . View::e($issue) . '</p>';
+                            }
+                        } elseif ($state['records'] !== []) {
+                            $items .= '<p>Multiple SPF TXT records were returned:</p>';
+                            foreach ($state['records'] as $record) {
+                                $items .= '<code class="rec-evidence">' . View::e($record) . '</code>';
+                            }
+                        } else {
+                            $items .= '<p class="card-sub">No SPF TXT answer was returned. This can mean no record or a transient DNS lookup failure; verify with authoritative DNS.</p>';
+                        }
+
+                        $items .= '</li>';
+                    }
+
+                    $items .= '</ul>';
+                }
+
+                $items .= '<p class="card-sub">Confirm whether SPF evaluated the MAIL FROM or HELO identity and which party controls it before changing SPF. No include/IP mechanism is inferred from report data.</p>';
+            } else {
+                if ($details['dkim_signatures'] === []) {
+                    $items .= '<p>No matching raw DKIM domain/selector pair was recorded. Ask the sender to verify that it signs mail for the reported From domain.</p>';
+                } else {
+                    $items .= '<ul class="auth-guidance-list">';
+
+                    foreach ($details['dkim_signatures'] as $signature) {
+                        $key   = strtolower(rtrim(trim($signature['domain']), '.')) . "\0" . $signature['selector'];
+                        $state = $dkimStates[$key] ?? null;
+                        $items .= '<li><strong>Reported DKIM signature:</strong> d=<code>'
+                            . View::e($signature['domain']) . '</code>, s=<code>' . View::e($signature['selector']) . '</code>';
+
+                        if ($state === null) {
+                            $items .= '<p class="card-sub">Current DNS lookup was not run (invalid target or the 20-signature inspection limit was reached).</p>';
+                        } elseif ($state['records'] === []) {
+                            $items .= '<p class="card-sub">No TXT answer at <code>' . View::e($state['name'])
+                                . '</code>. This can mean no key is published or a transient DNS lookup failure.</p>';
+                        } else {
+                            $items .= '<p>Current DNS TXT at <code>' . View::e($state['name']) . '</code>:</p>';
+                            foreach ($state['records'] as $record) {
+                                $items .= '<code class="rec-evidence">' . View::e($record) . '</code>';
+                            }
+                        }
+
+                        $items .= '</li>';
+                    }
+
+                    $items .= '</ul>';
+                }
+
+                $items .= '<p class="card-sub">Compare the reported selector and current public key with the sender\'s signing configuration. A DNS key being present does not prove that the sender used it or that the report\'s signature aligned.</p>';
+            }
+
+            $items .= '</div>';
+        }
+
+        $notice = $evidence['truncated']
+            ? '<p class="card-sub">A safe report-evidence inspection bound was reached; displayed identities may be incomplete.</p>'
+            : '';
+
+        return '<div class="section-head"><h2>SPF/DKIM sender guidance'
+            . View::helpTooltip('card-auth-guidance', 'How SPF/DKIM sender guidance works') . '</h2></div>'
+            . '<div class="card auth-guidance"><p class="card-sub">Advisory only. Live DNS answers may be incomplete or temporarily unavailable. No DNS records are generated or changed.</p>'
+            . $notice . $items . '</div>';
     }
 
     private function severityVariant(string $severity): string

@@ -442,6 +442,12 @@ td.empty { text-align: center; color: var(--color-fg-muted); padding: 24px 14px;
 
 .rec-list { display: flex; flex-direction: column; gap: 8px; }
 .rec-item { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.auth-guidance { display: grid; gap: 16px; }
+.auth-guidance-item { border-top: 1px solid var(--color-border); padding-top: 12px; }
+.auth-guidance-item h3 { margin: 0 0 6px; font-size: 14px; }
+.auth-guidance-list { display: grid; gap: 10px; padding-left: 22px; }
+.auth-guidance-list li > .rec-evidence { display: block; margin: 6px 0; }
+.auth-guidance-list li > p { margin: 6px 0; }
 .rec-rule { font-weight: 700; font-size: 13px; }
 .rec-meta { font-size: 11.5px; color: var(--color-fg-muted); margin-left: auto; }
 .rec-evidence { flex-basis: 100%; font-size: 11.5px; white-space: pre-wrap; word-break: break-all; }
@@ -464,6 +470,18 @@ tr.auth-details td { background: var(--color-surface-muted); padding: 8px 14px; 
 .landing-help-cta h2 { font-size: 16px; margin: 0 0 6px; }
 .landing-help-cta .card-sub { max-width: 480px; margin: 0 auto 14px; }
 .landing-footer { text-align: center; padding: 16px 0 32px; font-size: 12.5px; color: var(--color-fg-muted); }
+
+.report-search-form { margin-bottom: 20px; }
+.report-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.report-search-grid .form-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 600; }
+.report-search-grid input, .report-search-grid select {
+  font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid var(--color-border);
+  border-radius: 6px; background: var(--color-surface); color: var(--color-fg); width: 100%;
+}
+.report-search-grid input:focus, .report-search-grid select:focus {
+  outline: 2px solid var(--color-accent); outline-offset: 1px; border-color: var(--color-accent);
+}
+.report-search-form .form-actions { margin-top: 16px; }
 
 @media (max-width: 760px) {
   .who .id { display: none; }

@@ -28,8 +28,10 @@ use App\Auth\WebauthnCredentialStore;
 use App\Auth\WebauthnService;
 use App\Config;
 use App\Database;
+use App\HealthCheck\Fix\ReportAuthDnsInspector;
 use App\HealthCheck\HealthCheckRepository;
 use App\HealthCheck\HealthCheckRunnerFactory;
+use App\HealthCheck\SystemDnsResolver;
 use App\Help\HelpRepository;
 use App\Http\AuthMiddleware;
 use App\Http\Controllers\AdminUsersController;
@@ -41,9 +43,12 @@ use App\Http\Controllers\InviteController;
 use App\Http\Controllers\KnownSendersController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\PasswordResetController;
+use App\Http\Controllers\ReportSearchController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Router;
 use App\Recommendation\RecommendationRepository;
+use App\Recommendation\ReportAuthEvidenceRepository;
+use App\Reports\ReportSearchRepository;
 
 // Security headers. No inline <script>/<style> is used anywhere (see
 // public/assets/) so the CSP stays strict with no 'unsafe-inline'.
@@ -53,68 +58,114 @@ header('Referrer-Policy: no-referrer');
 header("Content-Security-Policy: default-src 'self'; frame-ancestors 'none'");
 
 $config = Config::load();
-$pdo = Database::connect($config);
+$pdo    = Database::connect($config);
 
-$baseUrl = (string) $config->require('app.base_url');
+$baseUrl      = (string) $config->require('app.base_url');
 $secureCookie = str_starts_with($baseUrl, 'https://');
 
 if ($secureCookie) {
     header('Strict-Transport-Security: max-age=63072000; includeSubDomains');
 }
 
-$hasher = new PasswordHasher();
-$totp = new TotpService((string) $config->require('app.totp_encryption_key'));
-$recoveryCodes = new RecoveryCodes($hasher);
+$hasher             = new PasswordHasher();
+$totp               = new TotpService((string) $config->require('app.totp_encryption_key'));
+$recoveryCodes      = new RecoveryCodes($hasher);
 $recoveryCodesCount = (int) $config->get('app.recovery_codes_count', 10);
-$users = new UserRepository($pdo);
-$csrf = new Csrf((string) $config->require('app.csrf_secret'));
-$sealed = new SealedCookie((string) $config->require('app.cookie_seal_secret'), $secureCookie);
-$sessions = new SessionManager(
+$users              = new UserRepository($pdo);
+$csrf               = new Csrf((string) $config->require('app.csrf_secret'));
+$sealed             = new SealedCookie((string) $config->require('app.cookie_seal_secret'), $secureCookie);
+$sessions           = new SessionManager(
     $pdo,
     (string) $config->get('app.session_cookie_name', 'dmarc_session'),
     (int) $config->get('app.session_idle_minutes', 30),
     (int) $config->get('app.session_absolute_hours', 12),
     $secureCookie,
 );
-$stepUp = new StepUp($hasher, $sealed);
-$audit = new AuditLog($pdo);
-$mailer = new Mailer((string) $config->require('app.mail_from'));
+$stepUp      = new StepUp($hasher, $sealed);
+$audit       = new AuditLog($pdo);
+$mailer      = new Mailer((string) $config->require('app.mail_from'));
 $invitations = new InvitationService($pdo, $users, (int) $config->get('app.invitation_ttl_hours', 168));
-$resets = new PasswordResetService($pdo, $users, (int) $config->get('app.password_reset_ttl_minutes', 60));
-$webauthn = new WebauthnService(
+$resets      = new PasswordResetService($pdo, $users, (int) $config->get('app.password_reset_ttl_minutes', 60));
+$webauthn    = new WebauthnService(
     (string) $config->require('app.webauthn_rp_id'),
     (string) $config->require('app.webauthn_rp_name'),
     $baseUrl,
 );
 $webauthnStore = new WebauthnCredentialStore($pdo);
 
-$auth = new AuthMiddleware($sessions, $users, $csrf);
-$rateLimiter = new LoginRateLimiter($pdo);
+$auth          = new AuthMiddleware($sessions, $users, $csrf);
+$rateLimiter   = new LoginRateLimiter($pdo);
 $breachChecker = new HibpBreachedPasswordChecker((int) $config->get('app.breach_check_timeout_seconds', 3));
 
 $authController = new AuthController(
-    $pdo, $users, $hasher, $totp, $recoveryCodes, $sessions, $webauthn, $webauthnStore, $sealed, $audit, $auth, $rateLimiter,
+    $pdo,
+    $users,
+    $hasher,
+    $totp,
+    $recoveryCodes,
+    $sessions,
+    $webauthn,
+    $webauthnStore,
+    $sealed,
+    $audit,
+    $auth,
+    $rateLimiter,
 );
 $inviteController = new InviteController(
-    $pdo, $users, $invitations, $hasher, $totp, $recoveryCodes, $recoveryCodesCount,
-    $sessions, $webauthn, $webauthnStore, $sealed, $audit, $breachChecker,
+    $pdo,
+    $users,
+    $invitations,
+    $hasher,
+    $totp,
+    $recoveryCodes,
+    $recoveryCodesCount,
+    $sessions,
+    $webauthn,
+    $webauthnStore,
+    $sealed,
+    $audit,
+    $breachChecker,
 );
-$resetController = new PasswordResetController($resets, $hasher, $mailer, $sessions, $audit, $baseUrl, $breachChecker);
+$resetController    = new PasswordResetController($resets, $hasher, $mailer, $sessions, $audit, $baseUrl, $breachChecker);
 $securityController = new SecurityController(
-    $pdo, $users, $hasher, $totp, $recoveryCodes, $recoveryCodesCount,
-    $sessions, $webauthn, $webauthnStore, $sealed, $stepUp, $audit, $auth, $breachChecker,
+    $pdo,
+    $users,
+    $hasher,
+    $totp,
+    $recoveryCodes,
+    $recoveryCodesCount,
+    $sessions,
+    $webauthn,
+    $webauthnStore,
+    $sealed,
+    $stepUp,
+    $audit,
+    $auth,
+    $breachChecker,
 );
 $adminController = new AdminUsersController(
-    $pdo, $users, $invitations, $resets, $mailer, $sessions, $stepUp, $audit, $auth, $baseUrl,
+    $pdo,
+    $users,
+    $invitations,
+    $resets,
+    $mailer,
+    $sessions,
+    $stepUp,
+    $audit,
+    $auth,
+    $baseUrl,
 );
 $knownSendersController = new KnownSendersController($pdo, $audit, $auth);
-$auditLogController      = new AuditLogController($audit, $auth);
-$helpController          = new HelpController(new HelpRepository(HelpRepository::defaultContentFiles()), $auth);
-$landingController       = new LandingController();
-$healthCheckRepository   = new HealthCheckRepository($pdo);
-$domainController      = new DomainController(
+$auditLogController     = new AuditLogController($audit, $auth);
+$helpController         = new HelpController(new HelpRepository(HelpRepository::defaultContentFiles()), $auth);
+$landingController      = new LandingController();
+$reportSearchController = new ReportSearchController(new ReportSearchRepository($pdo));
+$healthCheckRepository  = new HealthCheckRepository($pdo);
+$domainController       = new DomainController(
     $pdo,
     new RecommendationRepository($pdo),
+    new ReportAuthEvidenceRepository($pdo),
+    new ReportAuthDnsInspector(new SystemDnsResolver()),
     $healthCheckRepository,
     new HealthCheckRunnerFactory($config, $healthCheckRepository),
     $audit,
@@ -208,6 +259,8 @@ $router->get('/', static function () use ($auth, $landingController, $domainCont
 });
 $router->get('/domain', $auth->guard(Roles::READ_ONLY, [$domainController, 'show']));
 $router->get('/domain/report', $auth->guard(Roles::READ_ONLY, [$domainController, 'reportDetail']));
+$router->get('/reports', $auth->guard(Roles::READ_ONLY, [$reportSearchController, 'index']));
+$router->get('/reports/export', $auth->guard(Roles::READ_ONLY, [$reportSearchController, 'export']));
 
 // --- Domain onboarding / baseline approval / policy editing (spec §10.6/§11.1/§15.1 — Admin tier) ---
 $router->post('/domains/add', $auth->guardPost(Roles::ADMIN, [$domainController, 'add']));

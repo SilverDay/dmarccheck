@@ -26,9 +26,15 @@ use App\Alerting\Checks\HeartbeatCheck;
 use App\Alerting\Checks\PassRateRegressionCheck;
 use App\Alerting\Checks\PolicyDriftCheck;
 use App\Alerting\Checks\UnknownVolumeCheck;
+use App\Alerting\Webhook\StreamWebhookHttpClient;
+use App\Alerting\Webhook\WebhookDestination;
+use App\Alerting\Webhook\WebhookSender;
+use App\Auth\AuditLog;
 use App\Auth\Mailer;
 use App\Config;
 use App\Database;
+use InvalidArgumentException;
+use Throwable;
 
 $config = Config::load();
 $pdo    = Database::connect($config);
@@ -125,8 +131,68 @@ $sent = (new Mailer($mailFrom))->send($mailTo, $subject, $body);
 
 if (!$sent) {
     fwrite(STDERR, "FATAL: failed to send alert digest email to $mailTo\n");
-    exit(1);
+} else {
+    printf("[sent] %d finding(s) across %d domain(s) to %s\n", \count($allFindings), \count($byDomain), $mailTo);
 }
 
-printf("[sent] %d finding(s) across %d domain(s) to %s\n", \count($allFindings), \count($byDomain), $mailTo);
-exit(0);
+$configuredWebhooks = $config->get('alerting.webhooks', []);
+
+if (!\is_array($configuredWebhooks) || !array_is_list($configuredWebhooks)) {
+    fwrite(STDERR, "[webhook-config-failed] alerting.webhooks must be a list.\n");
+    exit($sent ? 0 : 1);
+}
+
+$destinations = [];
+
+try {
+    $destinationNames = [];
+
+    foreach ($configuredWebhooks as $webhookConfig) {
+        if (!\is_array($webhookConfig)) {
+            throw new InvalidArgumentException('Each webhook destination must be a configuration object.');
+        }
+
+        $destination = WebhookDestination::fromEnvironment($webhookConfig);
+
+        if (isset($destinationNames[$destination->name])) {
+            throw new InvalidArgumentException('Webhook destination names must be unique.');
+        }
+
+        $destinationNames[$destination->name] = true;
+        $destinations[]                       = $destination;
+    }
+} catch (InvalidArgumentException $e) {
+    fwrite(STDERR, "[webhook-config-failed] " . $e->getMessage() . "\n");
+    exit($sent ? 0 : 1);
+}
+
+$audit = new AuditLog($pdo);
+
+foreach ((new WebhookSender(new StreamWebhookHttpClient(), $destinations))->send($allFindings) as $delivery) {
+    try {
+        $audit->record(null, 'alert.webhook_delivery', $delivery->destination, [
+            'event_type'    => $delivery->eventType,
+            'domain'        => $delivery->domain,
+            'event_id'      => $delivery->eventId,
+            'success'       => $delivery->success,
+            'attempts'      => $delivery->attempts,
+            'http_statuses' => $delivery->httpStatuses,
+        ]);
+    } catch (Throwable) {
+        fwrite(STDERR, "[webhook-audit-failed] Could not record delivery outcome for {$delivery->destination}.\n");
+    }
+
+    if (!$delivery->success) {
+        fwrite(
+            STDERR,
+            "[webhook-failed] {$delivery->destination} {$delivery->eventType} for {$delivery->domain}; "
+                . "{$delivery->attempts} attempt(s), HTTP statuses: "
+                . implode(',', array_map(static fn (?int $status): string => $status === null ? 'transport-error' : (string) $status, $delivery->httpStatuses))
+                . "\n"
+        );
+    } else {
+        printf("[webhook-sent] %s %s for %s\n", $delivery->destination, $delivery->eventType, $delivery->domain);
+    }
+}
+
+exit($sent ? 0 : 1);

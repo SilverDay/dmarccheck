@@ -98,25 +98,32 @@ Confirm the use case and exact filters/outputs before starting each feature.
 These are separate deliverables and may be reprioritized independently.
 
 1. **Report filtering, search, and export**
-   - [ ] Define filter fields, allowed date ranges, cross-domain access rules,
-     CSV columns, and maximum result sizes.
-   - [ ] Implement repository queries with validated filters and measured
-     indexes; keep domain scoping and role checks in the server.
-   - [ ] Add the UI and CSV export with correct escaping and tests for filter
-     combinations, empty results, large ranges, and export shape.
+   - [x] Define filters (7/30/90 days or custom up to 366 days; label,
+     DKIM/SPF, disposition, ASN organization), access (Read Only one domain;
+     Admin/Super Admin may search all), CSV columns, 200-row page display,
+     and 10,000-row export cap.
+   - [x] Implement parameterized report-record search with server-side role
+     enforcement and a date index for cross-domain range queries.
+   - [x] Add the search UI, formula-safe CSV, and focused criteria/export
+     tests; DB query/migration tests are opt-in via the isolated test DSN.
 2. **SPF/DKIM remediation snippets**
-   - [ ] Define safe inputs and evidence for R1/R2 and current DNS state.
-   - [ ] Implement advisory-only suggestions, SPF lookup-limit validation,
-     and clear operator review/copy steps; never publish DNS.
-   - [ ] Test malformed/current records and ensure suggestions cannot
-     silently replace existing mechanisms.
+   - [x] Define safe inputs and evidence: current R1/R2 recommendation
+     subjects, report-observed SPF identities and DKIM domain/selectors, and
+     live DNS TXT answers for valid targets.
+   - [x] Add Admin-only advisory guidance and approximate SPF lookup counts;
+     do not infer provider includes/IP mechanisms or publish DNS.
+   - [x] Test DNS target validation, the shared SPF lookup counter, and
+     report-evidence mapping. Empty DNS answers remain inconclusive, and
+     lookup targets/results are bounded.
 3. **Webhook alerting**
-   - [ ] Define supported destinations, configuration/secrets handling,
-     payload schema, privacy-minimized fields, and failure policy.
-   - [ ] Implement bounded timeouts/retries, request signing, and audit
-     outcomes without blocking the existing email digest.
-   - [ ] Test success, retry, permanent failure, secret redaction, and
-     duplicate-run behavior.
+   - [x] Define generic HTTPS JSON destinations, environment-backed URL and
+     HMAC-secret configuration, minimal payload, and nonblocking failure
+     policy.
+   - [x] Implement bounded timeouts/retries, request signing, redirect
+     refusal, and audit outcomes without blocking email delivery.
+   - [x] Test success, retry, permanent failure, secret redaction, and
+     repeat-while-active behavior. Persistent cross-run deduplication is
+     intentionally not used, matching the email digest.
 4. **Audit-log search**
    - [ ] Define searchable fields/facets and date-range bounds.
    - [ ] Add parameterized queries and indexes based on query plans; preserve
